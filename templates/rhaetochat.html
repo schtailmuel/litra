@@ -6,25 +6,33 @@
     <div class="public-hero-inner">
       <div class="public-hero-copy">
         <p class="eyebrow">RhaetoChat</p>
-        <h1>Language Inclusion, Technology, and Resource Advancement</h1>
+        <h1>RhaetoChat</h1>
         <p>
-          RhaetoChat is a data collection project focused on developing language
-          technologies for Romansh and Ladin, two under-resourced languages of
-          the Alpine region.
+          <b>L</b>anguage <b>I</b>nclusion, <b>T</b>echnology, and <b>R</b>esource <b>A</b>dvancement for Romansh
+          and Ladin.
         </p>
         <p>
-          The project combines safe human-written prompts, post-edited machine
-          translation, native-speaker review, and preference rankings over model
-          responses so future multilingual LLMs can better serve these varieties.
+          The project builds practical workflows for high-quality conversational
+          language data in Rhaeto-Romance varieties: safe prompts, post-edited
+          machine translation, native-speaker quality review, and preference
+          rankings over model responses.
         </p>
         <div class="public-metrics" aria-label="Project highlights">
           <div>
             <strong>350+</strong>
-            <span>prompts per collection</span>
+            <span>representative prompts</span>
           </div>
           <div>
             <strong>9</strong>
             <span>Romansh and Ladin varieties</span>
+          </div>
+          <div>
+            <strong>1,000+</strong>
+            <span>rankings per variety</span>
+          </div>
+          <div>
+            <strong>12 mo.</strong>
+            <span>collection and reporting</span>
           </div>
         </div>
         <p class="public-award-note">
@@ -95,17 +103,51 @@
     </div>
   </section>
 
+  <section class="public-section public-brief-section" aria-label="RhaetoChat brief">
+    <div class="public-section-inner public-brief-grid">
+      <article class="public-brief-main">
+        <p class="eyebrow">Public Brief</p>
+        <h2>A practical path for languages and their written varieties</h2>
+        <p>
+          Romansh and Ladin are small European language communities with strong
+          internal variation. Sutsilvan is especially underrepresented, with
+          roughly 1,000 active speakers, and conversational fine-tuning material
+          remains scarce across these languages.
+        </p>
+        <p>
+          RhaetoChat treats this as an infrastructure problem: collect consistent
+          conversational prompts, keep each variety separate, compensate native
+          contributors, and document the limits of the resulting material.
+        </p>
+      </article>
+
+      <div class="public-brief-list" aria-label="Project context">
+        <div>
+          <strong>Starting gap</strong>
+          <span>Romansh has very limited human-written question-answer material, and Ladin has even less comparable conversational data.</span>
+        </div>
+        <div>
+          <strong>Collection model</strong>
+          <span>Machine translation creates a draft; native post-editors turn it into idiomatic Romansh or Ladin.</span>
+        </div>
+        <div>
+          <strong>Research value</strong>
+          <span>The same workflow supports LLM adaptation, machine translation, post-editing research, and evaluation.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="public-section public-section-muted" aria-label="Project plan">
     <div class="public-section-inner public-plan">
       <div class="public-text-block">
         <p class="eyebrow">Project Plan</p>
-        <h2>From safe prompts to open datasets</h2>
+        <h2>From safe prompts to reviewed language work</h2>
         <p>
-          RhaetoChat starts from safe prompts in the Open Assistant Conversations
-          Dataset, translates them into Romansh and Ladin varieties, and asks
-          native speakers to post-edit prompts and rank model responses. The
-          resulting data is intended for supervised fine-tuning, reward-model
-          research, machine translation, and dataset documentation.
+          RhaetoChat starts from prompts that have already passed safety review,
+          translates them into Romansh and Ladin varieties, and asks native
+          speakers to post-edit prompts and rank model responses. LITRA keeps the
+          workflow auditable from import to export.
         </p>
       </div>
       <div class="public-data-grid" aria-label="RhaetoChat outputs">
@@ -119,11 +161,117 @@
         </div>
         <div>
           <strong>Reusable exports</strong>
-          <span>LITRA prepares structured JSONL, TXT, and DOCX packages for project owners to archive or share under their own terms.</span>
+          <span>LITRA prepares structured JSONL, TXT, and DOCX packages for archiving, analysis, and controlled sharing.</span>
         </div>
         <div>
           <strong>Community partners</strong>
           <span>Lia Rumantscha, unibz, UZH, and the University of Innsbruck connect research with language expertise.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="public-section" aria-label="Language coverage and safeguards">
+    <div class="public-section-inner public-two-column">
+      <article class="public-text-block">
+        <p class="eyebrow">Language Coverage</p>
+        <h2>Nine targets, one coordinated workflow</h2>
+        <p>
+          The work covers Rumantsch Grischun, Sursilvan, Sutsilvan, Surmiran,
+          Puter, Vallader, Val Badia, Gherdëina, and Ladin Dolomitan. Each
+          variety can have its own contributors, comments, review status, and
+          export package.
+        </p>
+        <div class="public-chip-list" aria-label="Covered varieties">
+          <span>Rumantsch Grischun</span>
+          <span>Sursilvan</span>
+          <span>Sutsilvan</span>
+          <span>Surmiran</span>
+          <span>Puter</span>
+          <span>Vallader</span>
+          <span>Val Badia</span>
+          <span>Gherdëina</span>
+          <span>Ladin Dolomitan</span>
+        </div>
+      </article>
+
+      <article class="public-text-block">
+        <p class="eyebrow">Safeguards</p>
+        <h2>Designed around people, not scraped volume</h2>
+        <p>
+          RhaetoChat centers paid native post-editors and annotators, early
+          recruitment through community networks, contributor agreements,
+          pseudonymous identifiers, and expert feedback on translation samples.
+        </p>
+        <ul class="public-check-list">
+          <li>Safe prompts are screened before assignment.</li>
+          <li>Annotators work on the variety they know.</li>
+          <li>Known limitations and demographic bias are documented.</li>
+          <li>Project exports omit account names by default.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="public-section public-section-muted" aria-label="Milestones and partners">
+    <div class="public-section-inner public-timeline-grid">
+      <div class="public-text-block">
+        <p class="eyebrow">Milestones</p>
+        <h2>A staged collection plan</h2>
+        <p>
+          The work moves through setup, collection, and reporting phases so
+          recruitment, guidelines, annotation, and quality assurance can advance
+          in a controlled sequence.
+        </p>
+      </div>
+
+      <ol class="public-timeline">
+        <li>
+          <span>Months 1-3</span>
+          <strong>Prepare</strong>
+          <p>Select prompts, write guidelines, set up the annotation platform, build translation and response pipelines, and recruit native contributors.</p>
+        </li>
+        <li>
+          <span>Months 4-10</span>
+          <strong>Collect</strong>
+          <p>Post-edit translations, rank model responses, collect comments, and monitor quality across varieties.</p>
+        </li>
+        <li>
+          <span>Months 11-12</span>
+          <strong>Report</strong>
+          <p>Document the workflow, technical findings, limitations, and lessons for future low-resource language projects.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="public-section" aria-label="Collaboration network">
+    <div class="public-section-inner public-collab-grid">
+      <div class="public-text-block">
+        <p class="eyebrow">Collaboration Network</p>
+        <h2>Community access meets language technology expertise</h2>
+        <p>
+          RhaetoChat brings together computational linguistics, language
+          documentation, machine translation, Romansh digital strategy, and
+          Ladin community work.
+        </p>
+      </div>
+      <div class="public-partner-cards">
+        <div>
+          <strong>Lia Rumantscha</strong>
+          <span>Romansh community network, language professionals, and digital translation strategy.</span>
+        </div>
+        <div>
+          <strong>University of Zurich</strong>
+          <span>Project lead, multilingual NLP, LLM adaptation, and Apertus experience.</span>
+        </div>
+        <div>
+          <strong>unibz</strong>
+          <span>Ladin studies, corpus resources, lexicographic expertise, and community access.</span>
+        </div>
+        <div>
+          <strong>University of Innsbruck</strong>
+          <span>Natural Language Processing for Ladin and low-resource machine translation.</span>
         </div>
       </div>
     </div>
