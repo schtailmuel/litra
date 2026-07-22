@@ -2542,6 +2542,19 @@ def qa_warning_items(source_text, target_text):
         add("empty_translation", "Empty translation")
         return warnings
 
+    def row_count(value):
+        lines = str(value or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        while lines and not lines[-1].strip():
+            lines.pop()
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        return len(lines)
+
+    source_rows = row_count(source)
+    target_rows = row_count(target)
+    if (source_rows > 1 or target_rows > 1) and source_rows != target_rows:
+        add("row_count", f"Row count differs: source {source_rows}, translation {target_rows}")
+
     source_numbers = set(re.findall(r"\d+(?:[.,]\d+)?", source))
     target_numbers = set(re.findall(r"\d+(?:[.,]\d+)?", target))
     missing_numbers = sorted(source_numbers - target_numbers)
