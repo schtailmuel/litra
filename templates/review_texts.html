@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Fast Review</h1>
+      <p>{{ link.project_name }} &middot; {{ text_count }} rows &middot; {{ reviewer }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('review_project', token=link.token) }}">Overview Review</a>
+      <a class="button secondary" href="{{ url_for('review_project_texts_download', token=link.token, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Download JSONL</a>
+      {% if page > 1 %}
+        <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, page=page - 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Previous</a>
+      {% endif %}
+      {% if page * per_page < text_count %}
+        <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, page=page + 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Next</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <section class="form-panel">
+    <form method="get" class="filter-panel">
+      <label>
+        Search
+        <input name="q" value="{{ filters.q }}" placeholder="ID, source, translation, comment">
+      </label>
+      <label>
+        Language
+        <select name="language">
+          <option value="">All languages</option>
+          {% for language in languages %}
+            <option value="{{ language }}" {% if filters.language|lower == language|lower %}selected{% endif %}>{{ language }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Status
+        <select name="status">
+          <option value="">Any status</option>
+          {% for status in TRANSLATION_STATUSES %}
+            <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ 'reviewed' if status == 'approved' else status.replace("_", " ") }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="missing" value="1" {% if filters.missing %}checked{% endif %}>
+        Missing
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="comments" value="1" {% if filters.comments %}checked{% endif %}>
+        Comments
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="warnings" value="1" {% if filters.warnings %}checked{% endif %}>
+        QA
+      </label>
+      <div class="filter-actions">
+        <button type="submit">Filter</button>
+        <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token) }}">Clear</a>
+        <a class="button secondary" href="{{ url_for('review_project_texts_download', token=link.token, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Download JSONL</a>
+      </div>
+    </form>
+
+    <div class="overview-grid reviewer-overview">
+      <div><strong>{{ overview.total_slots }}</strong><span>slots</span></div>
+      <div><strong>{{ overview.translated }}</strong><span>translated</span></div>
+      <div><strong>{{ overview.submitted }}</strong><span>submitted</span></div>
+      <div><strong>{{ overview.needs_revision }}</strong><span>needs revision</span></div>
+      <div><strong>{{ overview.reviewed }}</strong><span>reviewed</span></div>
+      <div><strong>{{ overview.warnings }}</strong><span>QA warnings</span></div>
+      <div><strong>{{ overview.comments }}</strong><span>comments</span></div>
+    </div>
+  </section>
+
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <h2>Texts</h2>
+      <div class="pagination">
+        {% if page > 1 %}
+          <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, page=page - 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Previous</a>
+        {% endif %}
+        {% if page * per_page < text_count %}
+          <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, page=page + 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Next</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fast-review-table">
+      <div class="fast-review-head">
+        <span>ID</span>
+        <span>Source</span>
+        <span>Translation</span>
+        <span>Status</span>
+      </div>
+      {% for row in text_rows %}
+        <form method="post" class="fast-review-row" id="slot-{{ row.segment_id }}-{{ row.target_language|replace(' ', '-') }}">
+          <input type="hidden" name="page" value="{{ page }}">
+          <input type="hidden" name="q" value="{{ filters.q }}">
+          <input type="hidden" name="language" value="{{ filters.language }}">
+          <input type="hidden" name="filter_status" value="{{ filters.status }}">
+          <input type="hidden" name="missing" value="{{ filters.missing }}">
+          <input type="hidden" name="comments" value="{{ filters.comments }}">
+          <input type="hidden" name="warnings" value="{{ filters.warnings }}">
+          <input type="hidden" name="segment_id" value="{{ row.segment_id }}">
+          <input type="hidden" name="target_language" value="{{ row.target_language }}">
+          <input type="hidden" name="version" value="{{ row.version }}">
+
+          <div class="fast-review-id">
+            <strong>{{ row.identifier }}</strong>
+            <small>{{ row.target_language }}</small>
+            <span class="review-status {{ 'reviewed' if row.status == 'approved' else row.status }}">{{ 'reviewed' if row.status == 'approved' else row.status.replace("_", " ") }}</span>
+          </div>
+
+          <div class="fast-review-source">
+            {% if editor_config.view == "sentence_list" %}
+              {% for line in row.source_lines %}
+                <p><strong>{{ loop.index }}.</strong> {{ line }}</p>
+              {% endfor %}
+            {% else %}
+              <div class="markdown-body">{{ row.source_text|markdown }}</div>
+            {% endif %}
+            {% if row.instructions %}
+              <details>
+                <summary>Instructions</summary>
+                <div class="markdown-body">{{ row.instructions|markdown }}</div>
+              </details>
+            {% endif %}
+          </div>
+
+          <div class="fast-review-edit">
+            {% if editor_config.view == "sentence_list" %}
+              <div class="sentence-editor fast-sentence-editor">
+                {% for line in row.source_lines %}
+                  <label class="sentence-cell">
+                    <span>Translation {{ loop.index }}</span>
+                    <textarea name="target_lines" rows="2">{{ row.target_lines[loop.index0] if loop.index0 < row.target_lines|length else "" }}</textarea>
+                  </label>
+                {% endfor %}
+              </div>
+            {% else %}
+              <textarea name="target_text" rows="5" aria-label="{% if editor_config.view == 'dual_field' %}Text Translation{% else %}Translation{% endif %}">{{ row.draft_text if row.draft_text else row.target_text }}</textarea>
+            {% endif %}
+            {% if editor_config.has_instruction_translation %}
+              <label>
+                Instruction Translation
+                <textarea name="target_instructions" rows="3">{{ row.draft_instructions if row.draft_instructions else row.target_instructions }}</textarea>
+              </label>
+            {% endif %}
+            <label>
+              Saved comment
+              <textarea name="comment" rows="2">{{ row.draft_comment if row.draft_comment else row.comment }}</textarea>
+            </label>
+          </div>
+
+          <div class="fast-review-controls">
+            <label>
+              Status
+              <select name="translation_status">
+                {% for status in TRANSLATION_STATUSES %}
+                  <option value="{{ status }}" {% if row.status == status %}selected{% endif %}>{{ 'reviewed' if status == 'approved' else status.replace("_", " ") }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <small>
+              {% if row.updated_by %}Updated by {{ row.updated_by }}{% else %}No saved translation{% endif %}
+              {% if row.updated_at %}<br>{{ row.updated_at }}{% endif %}
+              {% if row.thread_comment_count %}<br>{{ row.thread_comment_count }} thread comment(s){% endif %}
+              {% if row.qa_warnings|qa_count %}<br>{{ row.qa_warnings|qa_count }} QA warning(s){% endif %}
+              {% if row.draft_text|trim and row.status != "draft" %}<br>has draft{% endif %}
+            </small>
+            <div class="review-actions">
+              <button type="submit" name="action" value="save_translation">Save</button>
+              <button type="submit" name="action" value="mark_reviewed" class="secondary">Mark Reviewed</button>
+            </div>
+          </div>
+        </form>
+      {% else %}
+        <div class="empty-state">
+          <h2>No rows match the filters</h2>
+          <p>Clear the filters or try a broader search.</p>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

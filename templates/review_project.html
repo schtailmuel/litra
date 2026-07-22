@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Project Review</h1>
+      <p>{{ link.project_name }} &middot; {{ link.source_language }} source &middot; {{ reviewer }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token) }}">Fast List</a>
+      {% if page > 1 %}
+        <a class="button secondary" href="{{ url_for('review_project', token=link.token, page=page - 1) }}">Previous</a>
+      {% endif %}
+      {% if page * per_page < segment_count %}
+        <a class="button secondary" href="{{ url_for('review_project', token=link.token, page=page + 1) }}">Next</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <section class="form-panel">
+    <h2>Overview</h2>
+    <div class="overview-grid reviewer-overview">
+      <div><strong>{{ overview.total_slots }}</strong><span>translation slots</span></div>
+      <div><strong>{{ overview.translated }}</strong><span>translated</span></div>
+      <div><strong>{{ overview.untranslated }}</strong><span>untranslated</span></div>
+      <div><strong>{{ overview.draft }}</strong><span>draft</span></div>
+      <div><strong>{{ overview.submitted }}</strong><span>submitted</span></div>
+      <div><strong>{{ overview.needs_revision }}</strong><span>needs revision</span></div>
+      <div><strong>{{ overview.reviewed }}</strong><span>reviewed</span></div>
+      <div><strong>{{ overview.warnings }}</strong><span>QA warnings</span></div>
+      <div><strong>{{ overview.comments }}</strong><span>with comments</span></div>
+    </div>
+  </section>
+
+  {% if not languages %}
+    <section class="empty-state section-gap">
+      <h2>No target languages yet</h2>
+      <p>The project manager needs to add target languages before review can start.</p>
+    </section>
+  {% else %}
+    <section class="review-stack section-gap">
+      {% for row in review_rows %}
+        {% set segment = row.segment %}
+        <article class="review-segment" id="segment-{{ segment.id }}">
+          <div class="review-segment-head">
+            <div>
+              <h2>{{ segment.identifier }}</h2>
+              <p>{{ segment.source_language }} &middot; segment {{ segment.ordinal }}</p>
+            </div>
+            <form method="post">
+              <input type="hidden" name="page" value="{{ page }}">
+              <input type="hidden" name="segment_id" value="{{ segment.id }}">
+              <button type="submit" name="action" value="mark_segment_reviewed" class="secondary">Mark Segment Reviewed</button>
+            </form>
+          </div>
+
+          <div class="review-source">
+            <div class="markdown-body">{{ segment.source_text|markdown }}</div>
+            {% if segment.instructions %}
+              <details>
+                <summary>Instructions</summary>
+                <div class="markdown-body">{{ segment.instructions|markdown }}</div>
+              </details>
+            {% endif %}
+          </div>
+
+          <div class="review-translation-grid" style="--review-columns: {{ languages|length }}">
+            {% for item in row.translations %}
+              <div class="review-translation-card">
+                <div class="review-card-head">
+                  <strong>{{ item.language }}</strong>
+                  <span class="review-status {{ 'reviewed' if item.status == 'approved' else item.status }}">{{ 'reviewed' if item.status == 'approved' else item.status.replace("_", " ") }}</span>
+                </div>
+
+                <form method="post" class="review-translation-form">
+                  <input type="hidden" name="page" value="{{ page }}">
+                  <input type="hidden" name="segment_id" value="{{ segment.id }}">
+                  <input type="hidden" name="target_language" value="{{ item.language }}">
+                  <input type="hidden" name="version" value="{{ item.version }}">
+                  {% if editor_config.view == "sentence_list" %}
+                    <div class="sentence-editor">
+                      {% set source_lines = segment.source_text.splitlines() %}
+                      {% set target_lines = item.target_text.splitlines() %}
+                      {% for line in source_lines %}
+                        <label class="sentence-cell">
+                          <span>Translation {{ loop.index }}</span>
+                          <textarea name="target_lines" rows="2">{{ target_lines[loop.index0] if loop.index0 < target_lines|length else "" }}</textarea>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <label>
+                      {% if editor_config.view == "dual_field" %}Text Translation{% else %}Translation{% endif %}
+                      <textarea name="target_text" rows="8">{{ item.target_text }}</textarea>
+                    </label>
+                  {% endif %}
+                  {% if editor_config.has_instruction_translation %}
+                    <label>
+                      Instruction Translation
+                      <textarea name="target_instructions" rows="5">{{ item.target_instructions }}</textarea>
+                    </label>
+                  {% endif %}
+                  <label>
+                    Comment
+                    <textarea name="comment" rows="3">{{ item.comment }}</textarea>
+                  </label>
+                  <label>
+                    Status
+                    <select name="status">
+                      {% for status in TRANSLATION_STATUSES %}
+                        <option value="{{ status }}" {% if status == item.status %}selected{% endif %}>{{ 'reviewed' if status == 'approved' else status.replace("_", " ") }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  {% if item.qa_warnings|qa_count %}
+                    <div class="qa-box compact-qa">
+                      <strong>QA warnings</strong>
+                      {% for warning in item.qa_warnings|from_json %}
+                        <span>{{ warning.label }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                  <small class="review-meta">
+                    {% if item.updated_by %}Updated by {{ item.updated_by }}{% else %}No saved translation{% endif %}
+                    {% if item.updated_at %}&middot; {{ item.updated_at }}{% endif %}
+                  </small>
+                  <div class="review-actions">
+                    <button type="submit" name="action" value="save_translation">Save</button>
+                    <button type="submit" name="action" value="mark_reviewed" class="secondary">Mark Reviewed</button>
+                  </div>
+                </form>
+
+                <div class="review-comments">
+                  <strong>Comments</strong>
+                  {% if item.comments %}
+                    <div class="comment-thread compact-comment-thread">
+                      {% for comment_item in item.comments %}
+                        <div class="comment-item {% if comment_item.resolved %}resolved{% endif %}">
+                          <div>
+                            <strong>{{ comment_item.role }}</strong>
+                            <span>{{ comment_item.created_by }} &middot; {{ comment_item.created_at }}</span>
+                          </div>
+                          <p>{{ comment_item.body }}</p>
+                          {% if comment_item.resolved %}
+                            <small>Resolved by {{ comment_item.resolved_by }} at {{ comment_item.resolved_at }}</small>
+                          {% endif %}
+                          <div class="comment-actions">
+                            <form method="post">
+                              <input type="hidden" name="page" value="{{ page }}">
+                              <input type="hidden" name="segment_id" value="{{ segment.id }}">
+                              <input type="hidden" name="target_language" value="{{ item.language }}">
+                              <input type="hidden" name="comment_id" value="{{ comment_item.id }}">
+                              <button type="submit" name="action" value="toggle_comment" class="secondary">{{ "Reopen" if comment_item.resolved else "Resolve" }}</button>
+                            </form>
+                            {% if comment_item.can_delete %}
+                              <form method="post">
+                                <input type="hidden" name="page" value="{{ page }}">
+                                <input type="hidden" name="segment_id" value="{{ segment.id }}">
+                                <input type="hidden" name="target_language" value="{{ item.language }}">
+                                <input type="hidden" name="comment_id" value="{{ comment_item.id }}">
+                                <button type="submit" name="action" value="delete_comment" class="secondary danger-text-button">Delete</button>
+                              </form>
+                            {% endif %}
+                          </div>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <p class="muted">No thread comments.</p>
+                  {% endif %}
+
+                  <form method="post" class="review-comment-form">
+                    <input type="hidden" name="page" value="{{ page }}">
+                    <input type="hidden" name="segment_id" value="{{ segment.id }}">
+                    <input type="hidden" name="target_language" value="{{ item.language }}">
+                    <label>
+                      Add comment
+                      <textarea name="comment_body" rows="2"></textarea>
+                    </label>
+                    <button type="submit" name="action" value="add_comment" class="secondary">Add Comment</button>
+                  </form>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  {% endif %}
+{% endblock %}

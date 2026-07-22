@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Submitted Translations</h1>
+      <p>{{ link.project_name }} &middot; {{ link.source_language }} &rarr; {{ link.target_language }} &middot; {{ rows|length }} entries</p>
+    </div>
+    <a class="button secondary" href="{{ url_for('translate', token=link.token) }}">Back to Work</a>
+  </div>
+
+  <section class="form-panel">
+    <form method="get" class="filter-panel">
+      <label>
+        Search
+        <input name="q" value="{{ filters.q }}" placeholder="ID, source, translation, comment">
+      </label>
+      <label>
+        Status
+        <select name="status">
+          <option value="">Any status</option>
+          {% for status in TRANSLATION_STATUSES %}
+            <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status.replace("_", " ") }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Metadata / document
+        <input name="metadata" value="{{ filters.metadata }}" placeholder="chapter, domain, document">
+      </label>
+      <label>
+        Translator
+        <input name="translator" value="{{ filters.translator }}" placeholder="name">
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="comments" value="1" {% if filters.comments %}checked{% endif %}>
+        Has comments
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="warnings" value="1" {% if filters.warnings %}checked{% endif %}>
+        QA warnings
+      </label>
+      <div class="filter-actions">
+        <button type="submit">Filter</button>
+        <a class="button secondary" href="{{ url_for('translator_translations', token=link.token) }}">Clear</a>
+      </div>
+    </form>
+
+    {% if rows %}
+      <div class="text-table">
+        <div class="text-table-head">
+          <span>ID</span>
+          <span>Source</span>
+          <span>Translation</span>
+          <span>Comment</span>
+          <span>Updated</span>
+        </div>
+        {% for row in rows %}
+          <a class="text-row" href="{{ url_for('translator_translation_edit', token=link.token, segment_id=row.id) }}">
+            <strong>{{ row.identifier }}</strong>
+            <span>{{ row.source_text }}</span>
+            <span>{{ row.target_text }}</span>
+            <span>{{ row.comment }}</span>
+            <small>
+              {{ row.status.replace("_", " ") }}
+              {% if row.qa_warnings|qa_count %}
+                <br>{{ row.qa_warnings|qa_count }} warning(s)
+              {% endif %}
+              <br>{{ row.updated_by or "unknown" }}
+              <br>{{ row.updated_at }}
+            </small>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h2>No submitted translations yet</h2>
+        <p>Open the translator workspace to claim and save the first translation for this language.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

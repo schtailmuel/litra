@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Import Formats</h1>
+      <p>Create reusable mappings for JSONL and nested JSON datasets.</p>
+    </div>
+    <a class="button secondary" href="{{ url_for('new_project') }}">New Project</a>
+  </div>
+
+  <section class="project-import-shell">
+    <form method="post" class="form-panel project-import-form">
+      <div class="import-step">
+        <span>1</span>
+        <div>
+          <h2>Create Format</h2>
+          <p class="muted">Use dot paths for nested values, for example <code>translations</code> or <code>account.ui_language</code>.</p>
+        </div>
+      </div>
+
+      <fieldset class="import-fieldset">
+        <legend>Basics</legend>
+        <div class="mapping-grid">
+          <label>
+            Format name
+            <input name="name" placeholder="e.g. My JSON format" required>
+          </label>
+          <label>
+            File type
+            <select name="file_type">
+              <option value="jsonl">JSONL</option>
+              <option value="json">JSON</option>
+            </select>
+          </label>
+          <label class="span-full">
+            Description
+            <input name="description" placeholder="Short note for project managers">
+          </label>
+          <label>
+            Rows path
+            <input name="rows_path" placeholder="translations">
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="import-fieldset">
+        <legend>Source</legend>
+        <div class="mapping-grid">
+          <label>
+            ID path
+            <input name="identifier_path" placeholder="message_id">
+          </label>
+          <label>
+            Source text path
+            <input name="source_text_path" placeholder="text or sentences" required>
+          </label>
+          <label class="checkbox-label source-edit-toggle">
+            <input name="source_text_is_list" type="checkbox" value="1">
+            Source text is a list
+          </label>
+          <label>
+            Instruction path
+            <input name="instruction_path" placeholder="response or __none__">
+          </label>
+          <label>
+            Source language path
+            <input name="source_language_path" placeholder="source_language">
+          </label>
+          <label>
+            Manual source language
+            <input name="manual_source_language" placeholder="German">
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="import-fieldset seed-translation-panel" data-active="false">
+        <legend>Existing Translation</legend>
+        <div class="mapping-grid">
+          <label class="checkbox-label source-edit-toggle">
+            <input name="has_seed_translation" type="checkbox" value="1">
+            File contains one translation language
+          </label>
+          <label>
+            Translation text path
+            <input name="target_text_path" placeholder="translated_prompt">
+          </label>
+          <label class="checkbox-label source-edit-toggle">
+            <input name="target_text_is_list" type="checkbox" value="1">
+            Translation text is a list
+          </label>
+          <label>
+            Translated instruction path
+            <input name="translated_instruction_path" placeholder="translated_response">
+          </label>
+          <label>
+            Translation language path
+            <input name="target_language_path" placeholder="language">
+          </label>
+          <label>
+            Translation language name
+            <input name="target_language_name" placeholder="Romansh">
+          </label>
+        </div>
+      </fieldset>
+
+      <button type="submit">Create Format</button>
+    </form>
+
+    <aside class="form-panel schema-inspector">
+      <div>
+        <h2>Saved Formats</h2>
+        <p class="muted">Select one during upload, then adjust fields if that file variant needs it.</p>
+      </div>
+      <div class="format-list">
+        {% for item in formats %}
+          <a class="format-row" href="{{ url_for('edit_import_format', format_id=item.id) }}">
+            <span>
+              <strong>{{ item.name }}</strong>
+              <small>{{ item.file_type|upper }}{% if item.rows_path %} · rows: {{ item.rows_path }}{% endif %}</small>
+            </span>
+            <small>{{ item.source_text_path }}{% if item.source_text_is_list %} as lines{% endif %}</small>
+          </a>
+        {% endfor %}
+      </div>
+    </aside>
+  </section>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Update Import</h1>
+      <p>{{ project.name }} &middot; match revised JSON or JSONL rows by identifier</p>
+    </div>
+    <a class="button secondary" href="{{ url_for('project_detail', project_id=project.id) }}">Back</a>
+  </div>
+
+  <section class="form-panel stack">
+    <p class="muted">Existing source rows with matching identifiers will be updated. Translations are preserved. If source text, instructions, or metadata change, existing submitted translations are marked as needs revision and get a manager comment.</p>
+    <form method="post" enctype="multipart/form-data" class="stack">
+      <label>
+        Revised JSON or JSONL file
+        <input name="jsonl" type="file" accept=".json,.jsonl,application/json,application/x-ndjson,application/jsonl,text/plain" required>
+      </label>
+      <button type="submit">Update Matching Rows</button>
+    </form>
+  </section>
+{% endblock %}

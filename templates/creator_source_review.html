@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Source Review</h1>
+      <p>{{ link.project_name }} &middot; {{ link.source_language }} source &middot; {{ creator }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('creator_download_source', token=link.token) }}">Download Source ZIP</a>
+      {% if page > 1 %}
+        <a class="button secondary" href="{{ url_for('creator_source_review', token=link.token, page=page - 1) }}">Previous</a>
+      {% endif %}
+      {% if page * per_page < segment_count %}
+        <a class="button secondary" href="{{ url_for('creator_source_review', token=link.token, page=page + 1) }}">Next</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <section class="form-panel">
+    <h2>Overview</h2>
+    <div class="overview-grid reviewer-overview">
+      <div><strong>{{ overview.total }}</strong><span>source segments</span></div>
+      <div><strong>{{ overview.reviewed }}</strong><span>reviewed</span></div>
+      <div><strong>{{ overview.draft }}</strong><span>needs review</span></div>
+    </div>
+  </section>
+
+  <section class="review-stack section-gap">
+    {% for segment in source_rows %}
+      <article class="review-segment" id="segment-{{ segment.id }}">
+        <div class="review-segment-head">
+          <div>
+            <h2>{{ segment.identifier }}</h2>
+            <p>
+              {{ segment.source_language }} &middot; segment {{ segment.ordinal }}
+              {% if segment.source_status == "reviewed" %}
+                &middot; reviewed by {{ segment.source_reviewed_by }} at {{ segment.source_reviewed_at }}
+              {% endif %}
+            </p>
+          </div>
+          <span class="review-status {{ 'reviewed' if segment.source_status == 'reviewed' else 'draft' }}">
+            {{ 'reviewed' if segment.source_status == 'reviewed' else 'needs review' }}
+          </span>
+        </div>
+
+        <form method="post" class="source-review-form">
+          <input type="hidden" name="page" value="{{ page }}">
+          <input type="hidden" name="segment_id" value="{{ segment.id }}">
+
+          {% if editor_config.view == "sentence_list" %}
+            <div class="sentence-editor">
+              {% for line in segment.source_lines %}
+                <label class="sentence-cell">
+                  <span>Source {{ loop.index }}</span>
+                  <textarea name="source_lines" rows="2">{{ line }}</textarea>
+                </label>
+              {% endfor %}
+            </div>
+          {% else %}
+            <label>
+              Source text
+              <textarea name="source_text" rows="8">{{ segment.source_text }}</textarea>
+            </label>
+          {% endif %}
+
+          <label>
+            Instructions
+            <textarea name="instructions" rows="4">{{ segment.instructions }}</textarea>
+          </label>
+
+          <div class="review-actions">
+            <button type="submit" name="action" value="save_source" class="secondary">Save</button>
+            <button type="submit" name="action" value="save_and_review">Save and Mark Reviewed</button>
+          </div>
+        </form>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}

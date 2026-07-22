@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block main_class %}public-page{% endblock %}
+{% block content %}
+  <section class="login-landing">
+    <div class="login-landing-inner">
+      <div class="login-intro">
+        <p class="eyebrow">🪜 LITRA</p>
+        <h1>Translation workbench for multilingual data projects</h1>
+        <p>
+          Import structured data, assign translation work, review source and target texts,
+          collect comments, and export clean JSONL, TXT, and DOCX packages.
+        </p>
+        <div class="public-actions">
+          <a class="button secondary" href="{{ url_for('about') }}">About the Tool</a>
+          <a class="public-plain-link" href="{{ url_for('rhaetochat') }}">Used for RhaetoChat data collection</a>
+          <a class="public-plain-link" href="https://github.com/schtailmuel/litra" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+        </div>
+      </div>
+
+      <aside id="login" class="login-panel" aria-label="Login">
+        <h2>Login</h2>
+        <form method="post">
+          <label>
+            Username
+            <input name="username" autocomplete="username" required>
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit">Login</button>
+        </form>
+      </aside>
+    </div>
+  </section>
+{% endblock %}

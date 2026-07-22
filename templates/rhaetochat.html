@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block main_class %}public-page{% endblock %}
+{% block content %}
+  <section class="public-hero">
+    <img class="public-cover" src="{{ url_for('static', filename='img/cover.png') }}" alt="">
+    <div class="public-hero-inner">
+      <div class="public-hero-copy">
+        <p class="eyebrow">RhaetoChat</p>
+        <h1>Language Inclusion, Technology, and Resource Advancement</h1>
+        <p>
+          RhaetoChat is a data collection project focused on developing language
+          technologies for Romansh and Ladin, two under-resourced languages of
+          the Alpine region.
+        </p>
+        <p>
+          The project combines safe human-written prompts, post-edited machine
+          translation, native-speaker review, and preference rankings over model
+          responses so future multilingual LLMs can better serve these varieties.
+        </p>
+        <div class="public-metrics" aria-label="Project highlights">
+          <div>
+            <strong>350+</strong>
+            <span>prompts per collection</span>
+          </div>
+          <div>
+            <strong>9</strong>
+            <span>Romansh and Ladin varieties</span>
+          </div>
+        </div>
+        <p class="public-award-note">
+          Awardee of the
+          <a href="https://www.microsoft.com/en-us/research/academic-program/lingua-expanding-europes-voices-in-ai/" target="_blank" rel="noopener noreferrer">LINGUA Open Call</a>
+          for expanding Europe's voices in AI.
+        </p>
+      </div>
+
+      <aside class="public-login public-fact-card" aria-label="Tool note">
+        <h2>Powered by LITRA</h2>
+        <p>
+          LITRA manages imports, language assignment, post-editing, review,
+          comments, and exports for this data workflow.
+        </p>
+        <a class="button secondary public-light-button" href="{{ url_for('login') }}">Open 🪜 LITRA</a>
+      </aside>
+    </div>
+    <span class="public-photo-credit">Cover image: iStock / ascentxmedia</span>
+  </section>
+
+  <section class="public-partners" aria-label="Partner institutions">
+    <div class="public-section-inner public-partners-inner">
+      <span>Partner institutions</span>
+      <button class="public-image-button partner-image-button" type="button" data-modal-image="{{ url_for('static', filename='img/image.png') }}" data-modal-alt="Partner logos: Universität Zürich, unibz, Universität Innsbruck">
+        <img src="{{ url_for('static', filename='img/image.png') }}" alt="Partner logos: Universität Zürich, unibz, Universität Innsbruck">
+      </button>
+    </div>
+  </section>
+
+  <section class="public-section" aria-label="Project information">
+    <div class="public-section-inner">
+      <article class="public-media-row">
+        <div class="public-text-block">
+          <p class="eyebrow">Where We Work</p>
+          <h2>Many varieties, little digital coverage</h2>
+          <p>
+            Rhaeto-Romance is not one uniform target. 🪜 LITRA helps organize work
+            across Rumantsch Grischun, Sursilvan, Sutsilvan, Surmiran, Puter,
+            Vallader, and selected Ladin varieties so translations, comments, and
+            source flags stay tied to the exact linguistic context.
+          </p>
+        </div>
+        <figure class="public-figure">
+          <button class="public-image-button" type="button" data-modal-image="{{ url_for('static', filename='img/rhaeto-romance-varieties.png') }}" data-modal-alt="Map of selected Romansh and Ladin language varieties">
+            <img src="{{ url_for('static', filename='img/rhaeto-romance-varieties.png') }}" alt="Map of selected Romansh and Ladin language varieties">
+          </button>
+        </figure>
+      </article>
+
+      <article class="public-media-row">
+        <div class="public-text-block">
+          <p class="eyebrow">Why It Matters</p>
+          <h2>Current LLMs are not reliable enough</h2>
+          <p>
+            The slide comparison shows a simple test: translating potato into
+            several Rhaeto-Romance varieties. Most model outputs are wrong. 🪜 LITRA
+            is designed to collect the human-reviewed data needed for better
+            post-training, machine translation, and post-editing research.
+          </p>
+        </div>
+        <figure class="public-figure">
+          <button class="public-image-button" type="button" data-modal-image="{{ url_for('static', filename='img/llm-ladin-comparison.png') }}" data-modal-alt="Comparison of LLM answers against gold translations for Rhaeto-Romance varieties">
+            <img src="{{ url_for('static', filename='img/llm-ladin-comparison.png') }}" alt="Comparison of LLM answers against gold translations for Rhaeto-Romance varieties">
+          </button>
+        </figure>
+      </article>
+    </div>
+  </section>
+
+  <section class="public-section public-section-muted" aria-label="Project plan">
+    <div class="public-section-inner public-plan">
+      <div class="public-text-block">
+        <p class="eyebrow">Project Plan</p>
+        <h2>From safe prompts to open datasets</h2>
+        <p>
+          RhaetoChat starts from safe prompts in the Open Assistant Conversations
+          Dataset, translates them into Romansh and Ladin varieties, and asks
+          native speakers to post-edit prompts and rank model responses. The
+          resulting data is intended for supervised fine-tuning, reward-model
+          research, machine translation, and dataset documentation.
+        </p>
+      </div>
+      <div class="public-data-grid" aria-label="RhaetoChat outputs">
+        <div>
+          <strong>Human review</strong>
+          <span>Paid native post-editors and annotators check translations and preference rankings.</span>
+        </div>
+        <div>
+          <strong>Quality and ethics</strong>
+          <span>Only prompts marked safe are used, with manual screening before assignment.</span>
+        </div>
+        <div>
+          <strong>Open release</strong>
+          <span>The planned dataset release targets Apache-2.0 on Hugging Face, with Zenodo backup.</span>
+        </div>
+        <div>
+          <strong>Community partners</strong>
+          <span>Lia Rumantscha, unibz, UZH, and the University of Innsbruck connect research with language expertise.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <dialog class="public-image-modal" id="publicImageModal" aria-label="Image preview">
+    <button class="public-modal-close" type="button" aria-label="Close image preview">Close</button>
+    <img id="publicModalImage" alt="">
+  </dialog>
+  <script src="{{ url_for('static', filename='public.js') }}?v={{ STATIC_VERSION }}"></script>
+{% endblock %}

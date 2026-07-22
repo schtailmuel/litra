@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ link.project_name }} | {{ link.target_language }}</title>
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.svg') }}?v={{ STATIC_VERSION }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ STATIC_VERSION }}">
+  </head>
+  <body>
+    <header class="topbar translator-topbar">
+      <div class="translator-titlebar">
+        <span class="brand">{{ link.project_name }}</span>
+        <span>{{ link.source_language }} &rarr; {{ link.target_language }}</span>
+      </div>
+      <div class="translator-context" aria-live="polite">
+        <strong id="segmentTitle">Loading</strong>
+        <span id="segmentMeta"></span>
+        <span class="save-state" id="saveState">Idle</span>
+      </div>
+    </header>
+
+    <main
+      class="translator-shell"
+      data-token="{{ link.token }}"
+      data-api-base="{{ url_for('api_link_status', token=link.token).rsplit('/status', 1)[0] }}"
+      data-translations-base="{{ url_for('translator_translations', token=link.token) }}"
+    >
+      <aside class="translator-side">
+        <div class="translator-card">
+          <span>Translator</span>
+          <strong id="translatorName">{{ link.translator_name or "anonymous" }}</strong>
+        </div>
+        <div class="progress">
+          <strong id="assignmentCount">0 / 0</strong>
+          <span>submitted / assigned</span>
+        </div>
+        <div class="progress">
+          <strong id="languageCount">0 / 0</strong>
+          <span>language total</span>
+        </div>
+        <div class="recent-shortcuts">
+          <strong>Recent Submissions</strong>
+          <div id="recentSubmissions" class="recent-shortcut-list">
+            <span class="muted">None yet.</span>
+          </div>
+          <a class="submitted-translations-link" href="{{ url_for('translator_translations', token=link.token) }}">Submitted Translations</a>
+        </div>
+      </aside>
+
+      <section class="editor">
+        <details id="instructionPanel" class="source-box instruction-box" open>
+          <summary>Instructions</summary>
+          <div id="instructions" class="markdown-body"></div>
+        </details>
+
+        <div class="editor-toolbar-row">
+          <div class="markdown-toolbar" data-target="targetText">
+            <button type="button" data-md="bold">B</button>
+            <button type="button" data-md="italic">I</button>
+            <button type="button" data-md="heading">H</button>
+            <button type="button" data-md="list">List</button>
+            <button type="button" data-md="quote">Quote</button>
+            <button type="button" data-md="code">Code</button>
+            <button type="button" data-md-preview>Preview</button>
+          </div>
+          <div class="font-size-control" aria-label="Source and translation font size">
+            <button id="increaseTextFontButton" type="button" class="secondary">A+</button>
+            <label>
+              <span>Text size</span>
+              <input id="textFontSizeSlider" type="range" min="14" max="26" step="1" value="16">
+            </label>
+            <output id="textFontSizeValue" for="textFontSizeSlider">16px</output>
+          </div>
+        </div>
+
+        <div class="translation-workbench">
+          <div class="source-box source-pane">
+            <div class="source-pane-head">
+              <h2>Source</h2>
+              <div id="sourceTabs" class="source-tabs" aria-label="Source language options"></div>
+            </div>
+            <div id="sourceText" class="markdown-body"></div>
+            <div id="sentenceEditor" class="sentence-editor hidden"></div>
+          </div>
+
+          <label class="source-box translation-label target-pane">
+            <span class="pane-title" id="targetTextLabel">Translation</span>
+            <textarea id="targetText"></textarea>
+            <div id="targetPreview" class="markdown-body markdown-preview hidden"></div>
+          </label>
+
+          <label class="source-box translation-label target-instruction-pane hidden" id="targetInstructionPane">
+            <span class="pane-title">Instruction Translation</span>
+            <textarea id="targetInstructions" rows="6"></textarea>
+          </label>
+        </div>
+
+        <div class="editor-actions">
+          <button id="saveButton" type="button">Save</button>
+          <button id="nextAfterSaveButton" type="button" class="secondary">Save and Next</button>
+          <button id="skipButton" type="button" class="secondary">Skip Text</button>
+          <button id="flagSourceButton" type="button" class="secondary">Flag Source</button>
+          <button id="downloadSourceButton" type="button" class="secondary">Download Source TXT</button>
+          <button id="downloadTranslationButton" type="button" class="secondary">Download Translation TXT</button>
+        </div>
+
+        <div class="source-flag-panel hidden" id="sourceFlagPanel">
+          <h2>Flag Source</h2>
+          <label>
+            Note
+            <textarea id="sourceFlagNote" rows="3"></textarea>
+          </label>
+          <div class="editor-actions">
+            <button id="submitSourceFlagButton" type="button">Submit Flag</button>
+            <button id="cancelSourceFlagButton" type="button" class="secondary">Cancel</button>
+          </div>
+        </div>
+
+        <div class="conflict-panel hidden" id="conflictPanel">
+          <h2>Conflict</h2>
+          <p>This segment was updated by someone else after you loaded it.</p>
+          <div class="conflict-grid">
+            <label>
+              Server version
+              <textarea id="serverText" rows="8" readonly></textarea>
+            </label>
+            <label>
+              Your draft
+              <textarea id="draftText" rows="8" readonly></textarea>
+            </label>
+          </div>
+          <div class="editor-actions">
+            <button id="useServer" type="button" class="secondary">Use Server</button>
+            <button id="overwriteServer" type="button">Overwrite With Draft</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="comment-side" aria-label="Translation comments">
+        <div class="comment-panel-head">
+          <div>
+            <span class="eyebrow">Discussion</span>
+            <h2>Comments</h2>
+          </div>
+        </div>
+        <div id="commentList" class="workspace-comment-thread">
+          <span class="muted">Select a text to see comments.</span>
+        </div>
+        <label class="comment-compose">
+          New comment
+          <textarea id="commentBody" rows="4"></textarea>
+        </label>
+        <button id="postCommentButton" type="button">Post Comment</button>
+      </aside>
+    </main>
+
+    <script src="{{ url_for('static', filename='markdown.js') }}?v={{ STATIC_VERSION }}"></script>
+    <script src="{{ url_for('static', filename='translate.js') }}?v={{ STATIC_VERSION }}"></script>
+  </body>
+</html>

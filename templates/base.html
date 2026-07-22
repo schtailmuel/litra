@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or "LITRA | Linguistic Translation Workflow Assistant" }}</title>
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.svg') }}?v={{ STATIC_VERSION }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ STATIC_VERSION }}">
+</head>
+
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard') }}">🪜 LITRA</a>
+    <nav>
+      {% if session.get("user_id") %}
+      <a href="{{ url_for('dashboard') }}">Projects</a>
+      <a href="{{ url_for('import_formats') }}">Import Formats</a>
+      <a href="{{ url_for('about') }}">About</a>
+      <a href="{{ url_for('logout') }}">Logout</a>
+      {% else %}
+      <a href="{{ url_for('about') }}">About</a>
+      <a href="{{ url_for('login') }}#login">Login</a>
+      <a href="{{ url_for('register') }}">Register</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main class="{% block main_class %}page{% endblock %}">
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <div class="flash-stack">
+      {% for message in messages %}
+      <div class="flash">{{ message }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <div class="footer-content">
+      <p>
+        &copy; {{ now.year if now else "2026" }} 🪜 LITRA ·
+        <a href="{{ url_for('about') }}">About</a> ·
+        <a href="https://github.com/schtailmuel/litra" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </p>
+    </div>
+  </footer>
+</body>
+
+</html>

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ segment.identifier }}</h1>
+      <p>{{ project.name }} &middot; {{ target_language }}</p>
+    </div>
+    <a class="button secondary" href="{{ url_for('language_detail', project_id=project.id, target_language=target_language) }}">Back</a>
+  </div>
+
+  <section class="split">
+    <div class="form-panel">
+      <h2>Source</h2>
+      <div class="source-box unframed">
+        <div class="markdown-body">{{ segment.source_text|markdown }}</div>
+      </div>
+      <h2>Instructions</h2>
+      <div class="source-box unframed">
+        {% set default_instruction = "Translate from " ~ segment.source_language ~ " to " ~ target_language ~ "." %}
+        {% set instruction_text = default_instruction ~ ("\n\n" ~ segment.instructions if segment.instructions else "") %}
+        <div class="markdown-body">{{ instruction_text|markdown }}</div>
+      </div>
+    </div>
+
+    <form method="post" class="form-panel stack">
+      <h2>Edit Translation</h2>
+      <input type="hidden" name="action" value="save_translation">
+      <label>
+        Status
+        {% set current_status = translation.status if translation else "untranslated" %}
+        <select name="status">
+          {% for status in TRANSLATION_STATUSES %}
+            <option value="{{ status }}" {% if status == current_status %}selected{% endif %}>{{ status.replace("_", " ") }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% if editor_config.view == "sentence_list" %}
+        <div class="sentence-editor">
+          {% set source_lines = segment.source_text.splitlines() %}
+          {% set target_lines = (translation.target_text if translation else "").splitlines() %}
+          {% for line in source_lines %}
+            <label class="sentence-cell">
+              <span>Translation {{ loop.index }}</span>
+              <textarea name="target_lines" rows="2">{{ target_lines[loop.index0] if loop.index0 < target_lines|length else "" }}</textarea>
+            </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <label>
+          {% if editor_config.view == "dual_field" %}Text Translation{% else %}Translation{% endif %}
+          <div class="markdown-toolbar" data-target="managerTargetText">
+            <button type="button" data-md="bold">B</button>
+            <button type="button" data-md="italic">I</button>
+            <button type="button" data-md="heading">H</button>
+            <button type="button" data-md="list">List</button>
+            <button type="button" data-md="quote">Quote</button>
+            <button type="button" data-md="code">Code</button>
+            <button type="button" data-md-preview>Preview</button>
+          </div>
+          <textarea id="managerTargetText" name="target_text" rows="12">{{ translation.target_text if translation else "" }}</textarea>
+          <div id="managerTargetPreview" class="markdown-body markdown-preview hidden"></div>
+        </label>
+      {% endif %}
+      {% if editor_config.has_instruction_translation %}
+        <label>
+          Instruction Translation
+          <textarea name="target_instructions" rows="6">{{ translation.target_instructions if translation else "" }}</textarea>
+        </label>
+      {% endif %}
+      <label>
+        Comment
+        <textarea name="comment" rows="5">{{ translation.comment if translation else "" }}</textarea>
+      </label>
+      {% if translation and translation.qa_warnings|qa_count %}
+        <div class="qa-box">
+          <strong>QA warnings</strong>
+          {% for warning in translation.qa_warnings|from_json %}
+            <span>{{ warning.label }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+      <button type="submit">Save</button>
+    </form>
+  </section>
+
+  <section class="form-panel stack">
+    <h2>Comment Thread</h2>
+    {% if comment_rows %}
+      <div class="comment-thread">
+        {% for item in comment_rows %}
+          <div class="comment-item {% if item.resolved %}resolved{% endif %}">
+            <div>
+              <strong>{{ item.role }}</strong>
+              <span>{{ item.created_by }} &middot; {{ item.created_at }}</span>
+            </div>
+            <p>{{ item.body }}</p>
+            {% if item.resolved %}
+              <small>Resolved by {{ item.resolved_by }} at {{ item.resolved_at }}</small>
+            {% endif %}
+            <div class="comment-actions">
+              <form method="post">
+                <input type="hidden" name="action" value="toggle_comment">
+                <input type="hidden" name="comment_id" value="{{ item.id }}">
+                <button type="submit" class="secondary">{{ "Reopen" if item.resolved else "Resolve" }}</button>
+              </form>
+              {% if item.can_delete %}
+                <form method="post">
+                  <input type="hidden" name="action" value="delete_comment">
+                  <input type="hidden" name="comment_id" value="{{ item.id }}">
+                  <button type="submit" class="secondary danger-text-button">Delete</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No comments yet.</p>
+    {% endif %}
+
+    <form method="post" class="inline-comment-form">
+      <input type="hidden" name="action" value="add_comment">
+      <label>
+        Role
+        <select name="comment_role">
+          <option value="manager">manager</option>
+          <option value="reviewer">reviewer</option>
+          <option value="translator">translator</option>
+        </select>
+      </label>
+      <label>
+        New comment
+        <textarea name="comment_body" rows="3" placeholder="Add a note for this segment"></textarea>
+      </label>
+      <button type="submit">Add Comment</button>
+    </form>
+  </section>
+  <script src="{{ url_for('static', filename='markdown.js') }}"></script>
+  <script>
+    attachMarkdownEditor("managerTargetText", "managerTargetPreview");
+  </script>
+{% endblock %}

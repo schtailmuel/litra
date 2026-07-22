@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+  {% set total = language_stats.total_segments if language_stats else segment_count %}
+  {% set done = language_stats.completed_segments if language_stats else 0 %}
+  {% set percent = (done * 100 / total)|round(0, 'floor') if total else 0 %}
+
+  <div class="page-head">
+    <div>
+      <h1>{{ target_language }}</h1>
+      <p>{{ project.name }} &middot; {{ done }} / {{ total }} complete</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('language_texts', project_id=project.id, target_language=target_language) }}">Texts</a>
+      <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language) }}">Translation Data</a>
+      <a class="button secondary" href="{{ url_for('export_project', project_id=project.id, target_language=target_language) }}">Export</a>
+      <a class="button secondary" href="{{ url_for('export_project_txt_zip', project_id=project.id, target_language=target_language) }}">TXT ZIP</a>
+    </div>
+  </div>
+
+  <section class="form-panel">
+    <h2>Total Progress</h2>
+    <div class="language-total">
+      <div class="meter large-meter" aria-label="{{ percent }} percent complete">
+        <span style="width: {{ percent }}%"></span>
+      </div>
+      <strong>{{ percent }}%</strong>
+    </div>
+    <div class="overview-grid compact-overview">
+      <div><strong>{{ language_stats.draft_segments }}</strong><span>draft</span></div>
+      <div><strong>{{ language_stats.submitted_segments }}</strong><span>submitted</span></div>
+      <div><strong>{{ language_stats.needs_revision_segments }}</strong><span>needs revision</span></div>
+      <div><strong>{{ language_stats.approved_segments }}</strong><span>approved</span></div>
+      <div><strong>{{ language_stats.warning_segments }}</strong><span>QA warnings</span></div>
+    </div>
+  </section>
+
+  <section class="split section-gap">
+    <div class="form-panel">
+      <h2>Add Translator</h2>
+      <form method="post" class="assignment-limit-form">
+        <label>
+          Translator name
+          <input name="translator_name" placeholder="Ana" required>
+        </label>
+        <label>
+          Assignment limit
+          <input name="assignment_limit" type="number" min="1" placeholder="25" required>
+        </label>
+        <button type="submit">Add Translator</button>
+      </form>
+    </div>
+
+    <div class="form-panel">
+      <h2>Translators</h2>
+      {% if translator_rows %}
+        <div class="translator-table">
+          {% for row in translator_rows %}
+            <div>
+              <span>{{ row.translator_name }}</span>
+              <strong>{{ row.submitted_assignments }} / {{ row.total_assignments }} submitted</strong>
+              <small>{{ row.link_count }} access URL(s)</small>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">No translator saves yet.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="form-panel">
+    <h2>Translators</h2>
+    {% if links %}
+      <div class="link-list">
+        {% for link in links %}
+          {% set share_url = url_for('translate', token=link.token, _external=True) %}
+          {% set link_percent = (link.submitted_assignments * 100 / link.assignment_limit)|round(0, 'floor') if link.assignment_limit else 0 %}
+          <div class="link-row">
+            <div class="link-summary">
+              <strong>{{ link.translator_name or target_language }}</strong>
+              <div class="meter" aria-label="{{ link_percent }} percent complete">
+                <span style="width: {{ link_percent }}%"></span>
+              </div>
+              <small>{{ link.submitted_assignments }} / {{ link.assignment_limit }} submitted{% if link.active_claims %} &middot; active assignment{% endif %}</small>
+            </div>
+            <label>
+              Access URL
+              <input readonly value="{{ share_url }}" onfocus="this.select()">
+            </label>
+            <form method="post" class="assignment-form">
+              <input type="hidden" name="action" value="update_assignments">
+              <input type="hidden" name="link_id" value="{{ link.id }}">
+              <label>
+                Assignment limit
+                <input name="assignment_limit" type="number" min="1" value="{{ link.assignment_limit }}" required>
+              </label>
+              <button type="submit" class="secondary">Update</button>
+            </form>
+            <div class="link-actions">
+              <a class="button secondary" href="{{ share_url }}">Open Workspace</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No translators exist for this language yet.</p>
+    {% endif %}
+  </section>
+
+  <section id="remove-language" class="form-panel section-gap danger-panel">
+    <h2>Remove Language</h2>
+    <p>
+      This permanently removes this target language from the project, including
+      its translations, translator links, claims, comments, flags, and translation history.
+      Source texts and other project languages are preserved.
+    </p>
+    <form method="post" action="{{ url_for('delete_project_language', project_id=project.id, target_language=target_language) }}" class="delete-confirm-form">
+      <label>
+        Type <strong>{{ target_language }}</strong> to confirm
+        <input name="target_language" autocomplete="off" required>
+      </label>
+      <button type="submit" class="danger-button">Remove Language</button>
+    </form>
+  </section>
+
+{% endblock %}

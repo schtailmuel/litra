@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ segment.identifier }}</h1>
+      <p>{{ project.name }} source data</p>
+    </div>
+    <a class="button secondary" href="{{ url_for('project_source_data', project_id=project.id) }}">Back</a>
+  </div>
+
+  <form method="post" class="form-panel stack">
+    <label>
+      Identifier
+      <input name="identifier" value="{{ segment.identifier }}" required>
+    </label>
+    <label>
+      Source language
+      <input name="source_language" value="{{ segment.source_language }}" required>
+    </label>
+    <label>
+      Source text
+      <textarea name="source_text" rows="10" required {% if not project.source_editable %}readonly{% endif %}>{{ segment.source_text }}</textarea>
+    </label>
+    {% if not project.source_editable %}
+      <p class="muted">Source text editing is disabled for this project.</p>
+    {% endif %}
+    <label>
+      Instructions
+      <textarea name="instructions" rows="5">{{ segment.instructions }}</textarea>
+    </label>
+    <label>
+      Metadata JSON
+      <textarea name="metadata" rows="10">{{ metadata_pretty }}</textarea>
+    </label>
+    <div class="split-fields">
+      <label>
+        Add metadata key
+        <input name="add_key" placeholder="domain">
+      </label>
+      <label>
+        Add metadata value
+        <input name="add_value" placeholder="health">
+      </label>
+    </div>
+    <button type="submit">Save Source Data</button>
+  </form>
+{% endblock %}

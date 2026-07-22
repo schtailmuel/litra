@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Projects</h1>
+      <p>{{ user.username }}</p>
+    </div>
+    <a class="button" href="{{ url_for('new_project') }}">New Project</a>
+  </div>
+
+  {% if projects %}
+    <div class="project-list">
+      {% for project in projects %}
+        <a class="project-row" href="{{ url_for('project_detail', project_id=project.id) }}">
+          <span>
+            <strong>{{ project.name }}</strong>
+            <small>{{ project.source_language }} source</small>
+          </span>
+          <span>{{ project.segment_count }} segments</span>
+          <span>{{ project.language_count }} languages</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <h2>No projects yet</h2>
+      <p>Upload a JSONL file to create your first translation project.</p>
+    </div>
+  {% endif %}
+{% endblock %}

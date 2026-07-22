@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>New Project</h1>
+      <p>Import JSON or JSONL, confirm the source mapping, and start from clean project data.</p>
+    </div>
+  </div>
+
+  <section class="project-import-shell project-import-shell-full">
+    <form method="post" enctype="multipart/form-data" class="form-panel project-import-form" id="newProjectForm">
+      <div class="import-step">
+        <span>1</span>
+        <div>
+          <h2>Project</h2>
+          <p class="muted">Name the workspace and choose a UTF-8 JSON or JSON Lines file.</p>
+        </div>
+      </div>
+
+      <fieldset class="import-fieldset">
+        <legend>Project File</legend>
+        <label>
+          Import format
+          <select id="importFormatSelect" name="import_format_id">
+            <option value="">Auto-detect / manual mapping</option>
+            {% for item in import_formats %}
+              <option value="{{ item.id }}">{{ item.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Project name
+          <input name="name" autocomplete="off" required>
+        </label>
+        <label>
+          JSON or JSONL file
+          <input id="jsonlInput" name="jsonl" type="file" accept=".json,.jsonl,application/json,application/x-ndjson,application/jsonl,text/plain" required>
+        </label>
+      </fieldset>
+
+      <div class="schema-mapping" id="schemaMapping">
+        <div class="import-step compact-import-step">
+          <span>2</span>
+          <div>
+            <h2>Source Mapping</h2>
+            <p class="muted" id="schemaStatus">Choose a file to detect fields.</p>
+          </div>
+        </div>
+
+        <fieldset class="import-fieldset">
+          <legend>File Structure</legend>
+          <div class="mapping-grid">
+            <label>
+              File type
+              <select id="fileType" name="file_type">
+                <option value="jsonl">JSONL rows</option>
+                <option value="json">JSON document</option>
+              </select>
+            </label>
+            <label>
+              Rows path
+              <input id="rowsPath" name="rows_path" placeholder="translations">
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="import-fieldset">
+          <legend>Source Fields</legend>
+          <div class="mapping-grid">
+            <label>
+              Source text path
+              <select id="sourceTextKey" name="source_text_key">
+                <option value="">Choose source text path</option>
+              </select>
+            </label>
+            <label class="checkbox-label source-edit-toggle">
+              <input id="sourceTextIsList" name="source_text_is_list" type="checkbox" value="1">
+              Source text is a list shown line by line
+            </label>
+
+            <label>
+              Instruction path
+              <span class="key-field-pair">
+                <select id="instructionKey" name="instruction_key">
+                  <option value="__none__">No instruction path</option>
+                  <option value="instructions">instructions</option>
+                  <option value="instruction">instruction</option>
+                  <option value="source_instruction">source_instruction</option>
+                  <option value="source_instructions">source_instructions</option>
+                </select>
+                <input id="instructionKeyCustom" name="instruction_key_custom" placeholder="type exact key">
+              </span>
+            </label>
+
+            <label>
+              Source language path
+              <select id="sourceLanguageKey" name="source_language_key">
+                <option value="">Choose source language path</option>
+              </select>
+            </label>
+
+            <label class="checkbox-label">
+              <input id="sourceLanguageManual" name="source_language_manual" type="checkbox" value="1">
+              Set manually
+            </label>
+
+            <label>
+              Manual source language
+              <input id="manualSourceLanguage" name="manual_source_language" placeholder="e.g. German" disabled>
+            </label>
+
+            <label>
+              ID path
+              <select id="identifierKey" name="identifier_key">
+                <option value="__auto__">Generate IDs from row order</option>
+              </select>
+            </label>
+
+            <label class="checkbox-label source-edit-toggle">
+              <input name="source_editable" type="checkbox" value="1" checked>
+              Source text can be edited after import
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="import-fieldset seed-translation-panel" id="seedTranslationFields" data-active="false">
+          <legend>Existing Translation</legend>
+          <label class="checkbox-label source-edit-toggle">
+            <input id="hasSeedTranslation" name="has_seed_translation" type="checkbox" value="1">
+            File already contains translations for one language
+          </label>
+
+          <div class="seed-translation-fields">
+            <label>
+              Translation text path
+              <span class="key-field-pair">
+                <select id="targetTextKey" name="target_text_key">
+                  <option value="">No translation text path</option>
+                  <option value="target_text">target_text</option>
+                  <option value="tgt_text">tgt_text</option>
+                  <option value="translation">translation</option>
+                  <option value="translated_text">translated_text</option>
+                </select>
+                <input id="targetTextKeyCustom" name="target_text_key_custom" placeholder="type exact key">
+              </span>
+            </label>
+            <label class="checkbox-label source-edit-toggle">
+              <input id="targetTextIsList" name="target_text_is_list" type="checkbox" value="1">
+              Translation text is a list
+            </label>
+            <label>
+              Translated instruction path
+              <span class="key-field-pair">
+                <select id="translatedInstructionKey" name="translated_instruction_key">
+                  <option value="__none__">No translated instruction path</option>
+                  <option value="translated_instruction">translated_instruction</option>
+                  <option value="translated_instructions">translated_instructions</option>
+                  <option value="target_instruction">target_instruction</option>
+                  <option value="target_instructions">target_instructions</option>
+                  <option value="tgt_instruction">tgt_instruction</option>
+                  <option value="tgt_instructions">tgt_instructions</option>
+                </select>
+                <input id="translatedInstructionKeyCustom" name="translated_instruction_key_custom" placeholder="type exact key">
+              </span>
+            </label>
+            <label>
+              Translation language path
+              <select id="targetLanguageKey" name="target_language_key">
+                <option value="">No translation language path</option>
+              </select>
+            </label>
+            <label>
+              Translation language name
+              <input id="targetLanguageName" name="target_language_name" placeholder="e.g. Ladin">
+            </label>
+            <label>
+              Import status
+              <select name="seed_translation_status">
+                <option value="submitted">Submitted: ready for review</option>
+                <option value="draft">Post-editing draft: translators can claim</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+      </div>
+
+      <button type="submit">Import Project</button>
+    </form>
+
+    <aside class="form-panel schema-inspector">
+      <div>
+        <h2>Detected Schema</h2>
+        <p class="muted">Select a JSON or JSONL file to preview paths and example values before importing.</p>
+      </div>
+
+      <div class="schema-summary" id="schemaSummary">
+        <div>
+          <strong>No file selected</strong>
+          <span>Paths from the first valid rows will appear here.</span>
+        </div>
+      </div>
+
+      <div class="schema-preview">
+        <strong>Sample Row</strong>
+        <pre class="schema-example"><code id="sampleRow">{"source_language":"German","source_text":"Guten Morgen.","identifier":"doc-001-p01"}</code></pre>
+      </div>
+
+      <details class="schema-notes">
+        <summary>Supported defaults</summary>
+        <div class="schema-list">
+          <p class="muted">
+            Without an explicit mapping, 🪜 LITRA recognizes JSONL rows with
+            <code>source_text</code> or <code>src_text</code>,
+            <code>source_language</code>, <code>source_lang</code>, or <code>src_lang</code>,
+            <code>instructions</code> or <code>instruction</code>,
+            and IDs from <code>identifier</code>, <code>id</code>, <code>text_id</code>, or <code>segment_id</code>.
+          </p>
+          <p class="muted">
+            When seed translations are enabled, translated instructions are preserved in the imported translation comment.
+          </p>
+        </div>
+      </details>
+    </aside>
+  </section>
+
+  <script>
+    window.importFormats = {{ import_formats|tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='new_project.js') }}?v={{ STATIC_VERSION }}"></script>
+{% endblock %}

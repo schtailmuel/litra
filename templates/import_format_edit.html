@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Edit Format</h1>
+      <p>{{ import_format.name }}</p>
+    </div>
+    <a class="button secondary" href="{{ url_for('import_formats') }}">All Formats</a>
+  </div>
+
+  <form method="post" class="form-panel project-import-form">
+    <fieldset class="import-fieldset">
+      <legend>Basics</legend>
+      <div class="mapping-grid">
+        <label>
+          Format name
+          <input name="name" value="{{ import_format.name }}" required>
+        </label>
+        <label>
+          File type
+          <select name="file_type">
+            <option value="jsonl" {% if import_format.file_type == "jsonl" %}selected{% endif %}>JSONL</option>
+            <option value="json" {% if import_format.file_type == "json" %}selected{% endif %}>JSON</option>
+          </select>
+        </label>
+        <label class="span-full">
+          Description
+          <input name="description" value="{{ import_format.description }}">
+        </label>
+        <label>
+          Rows path
+          <input name="rows_path" value="{{ import_format.rows_path }}" placeholder="translations">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="import-fieldset">
+      <legend>Source</legend>
+      <div class="mapping-grid">
+        <label>
+          ID path
+          <input name="identifier_path" value="{{ import_format.identifier_path }}">
+        </label>
+        <label>
+          Source text path
+          <input name="source_text_path" value="{{ import_format.source_text_path }}" required>
+        </label>
+        <label class="checkbox-label source-edit-toggle">
+          <input name="source_text_is_list" type="checkbox" value="1" {% if import_format.source_text_is_list %}checked{% endif %}>
+          Source text is a list
+        </label>
+        <label>
+          Instruction path
+          <input name="instruction_path" value="{{ import_format.instruction_path }}">
+        </label>
+        <label>
+          Source language path
+          <input name="source_language_path" value="{{ import_format.source_language_path }}">
+        </label>
+        <label>
+          Manual source language
+          <input name="manual_source_language" value="{{ import_format.manual_source_language }}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="import-fieldset seed-translation-panel" data-active="{{ 'true' if import_format.has_seed_translation else 'false' }}">
+      <legend>Existing Translation</legend>
+      <div class="mapping-grid">
+        <label class="checkbox-label source-edit-toggle">
+          <input name="has_seed_translation" type="checkbox" value="1" {% if import_format.has_seed_translation %}checked{% endif %}>
+          File contains one translation language
+        </label>
+        <label>
+          Translation text path
+          <input name="target_text_path" value="{{ import_format.target_text_path }}">
+        </label>
+        <label class="checkbox-label source-edit-toggle">
+          <input name="target_text_is_list" type="checkbox" value="1" {% if import_format.target_text_is_list %}checked{% endif %}>
+          Translation text is a list
+        </label>
+        <label>
+          Translated instruction path
+          <input name="translated_instruction_path" value="{{ import_format.translated_instruction_path }}">
+        </label>
+        <label>
+          Translation language path
+          <input name="target_language_path" value="{{ import_format.target_language_path }}">
+        </label>
+        <label>
+          Translation language name
+          <input name="target_language_name" value="{{ import_format.target_language_name }}">
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="editor-actions">
+      <button type="submit">Save Format</button>
+      <button form="deleteFormat" type="submit" class="danger-button">Delete Format</button>
+    </div>
+  </form>
+
+  <form id="deleteFormat" method="post" action="{{ url_for('delete_import_format', format_id=import_format.id) }}"></form>
+{% endblock %}

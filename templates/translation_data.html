@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ target_language }} Translation Data</h1>
+      <p>{{ project.name }} &middot; {{ text_count }} rows &middot; 500 per page</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('language_detail', project_id=project.id, target_language=target_language) }}">Back</a>
+      <a class="button secondary" href="{{ url_for('language_texts', project_id=project.id, target_language=target_language) }}">Texts</a>
+      <a class="button secondary" href="{{ url_for('language_translation_data_jsonl', project_id=project.id, target_language=target_language, q=filters.q, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Download JSONL</a>
+    </div>
+  </div>
+
+  <section class="form-panel work-panel">
+    <form method="get" class="filter-panel compact-filter-panel">
+      <label>
+        Search
+        <input name="q" value="{{ filters.q }}" placeholder="ID, source, translation, instruction, comment">
+      </label>
+      <label>
+        Status
+        <select name="status">
+          <option value="">Any status</option>
+          {% for status in TRANSLATION_STATUSES %}
+            <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status.replace("_", " ") }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="missing" value="1" {% if filters.missing %}checked{% endif %}>
+        Missing
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="comments" value="1" {% if filters.comments %}checked{% endif %}>
+        Comments
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="warnings" value="1" {% if filters.warnings %}checked{% endif %}>
+        QA
+      </label>
+      <div class="filter-actions">
+        <button type="submit">Filter</button>
+        <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language) }}">Clear</a>
+      </div>
+    </form>
+
+    <div class="overview-grid compact-overview">
+      <div><strong>{{ overview.total }}</strong><span>total</span></div>
+      <div><strong>{{ overview.missing }}</strong><span>missing</span></div>
+      <div><strong>{{ overview.draft }}</strong><span>draft</span></div>
+      <div><strong>{{ overview.submitted }}</strong><span>submitted</span></div>
+      <div><strong>{{ overview.needs_revision }}</strong><span>needs revision</span></div>
+      <div><strong>{{ overview.approved }}</strong><span>approved</span></div>
+      <div><strong>{{ overview.warnings }}</strong><span>QA</span></div>
+      <div><strong>{{ overview.comments }}</strong><span>comments</span></div>
+    </div>
+
+    <div class="page-head compact-head">
+      <h2>Rows</h2>
+      <div class="pagination">
+        {% if page > 1 %}
+          <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language, page=page - 1, q=filters.q, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Previous</a>
+        {% endif %}
+        {% if page * per_page < text_count %}
+          <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language, page=page + 1, q=filters.q, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Next</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="text-table translation-data-table">
+      <div class="text-table-head">
+        <span>ID</span>
+        <span>Source</span>
+        <span>Translation</span>
+        <span>Instructions / Comment</span>
+        <span>Status</span>
+        <span></span>
+      </div>
+      {% for row in rows %}
+        <a class="text-row" href="{{ url_for('language_translation_data_edit', project_id=project.id, target_language=target_language, segment_id=row.id) }}">
+          <strong>{{ row.identifier }}</strong>
+          <span>{{ row.source_text }}</span>
+          <span>{{ row.display_target }}</span>
+          <span>
+            {% if editor_config.has_instruction_translation and row.display_instructions %}
+              {{ row.display_instructions }}
+            {% elif row.display_comment %}
+              {{ row.display_comment }}
+            {% else %}
+              {{ row.instructions }}
+            {% endif %}
+          </span>
+          <small>
+            {{ row.status.replace("_", " ") }}
+            {% if row.qa_warnings|qa_count %}
+              <br>{{ row.qa_warnings|qa_count }} warning(s)
+            {% endif %}
+            {% if row.draft_text|trim and row.status != "draft" %}
+              <br>has draft
+            {% endif %}
+          </small>
+          <small>Edit</small>
+        </a>
+      {% else %}
+        <div class="empty-state">
+          <h2>No rows match the filters</h2>
+          <p>Clear the filters or try a broader search.</p>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

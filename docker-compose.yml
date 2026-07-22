@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-craut}"
+      POSTGRES_USER: "${POSTGRES_USER:-craut}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+    volumes:
+      - craut-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-craut} -d ${POSTGRES_DB:-craut}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  craut:
+    build: .
+    image: craut:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      SECRET_KEY: "${SECRET_KEY:?Set SECRET_KEY in .env}"
+      APP_ENV: "${APP_ENV:-production}"
+      REQUIRE_POSTGRES: "${REQUIRE_POSTGRES:-1}"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-craut}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-craut}"
+      DB_POOL_MIN_SIZE: "${DB_POOL_MIN_SIZE:-1}"
+      DB_POOL_SIZE: "${DB_POOL_SIZE:-20}"
+      REGISTRATION_TOKEN: "${REGISTRATION_TOKEN:-}"
+      UPLOAD_MAX_MB: "${UPLOAD_MAX_MB:-32}"
+      RATE_LIMIT_ENABLED: "${RATE_LIMIT_ENABLED:-1}"
+      RATE_LIMIT_PUBLIC_WRITES_PER_MIN: "${RATE_LIMIT_PUBLIC_WRITES_PER_MIN:-120}"
+      RATE_LIMIT_AUTH_WRITES_PER_MIN: "${RATE_LIMIT_AUTH_WRITES_PER_MIN:-240}"
+      RATE_LIMIT_UPLOADS_PER_HOUR: "${RATE_LIMIT_UPLOADS_PER_HOUR:-20}"
+      WEB_CONCURRENCY: "${WEB_CONCURRENCY:-2}"
+      GUNICORN_THREADS: "${GUNICORN_THREADS:-4}"
+      GUNICORN_TIMEOUT: "${GUNICORN_TIMEOUT:-120}"
+      STATIC_VERSION: "${STATIC_VERSION:-20260721-1}"
+      STATIC_CACHE_SECONDS: "${STATIC_CACHE_SECONDS:-3600}"
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-0}"
+      TRUST_PROXY_HEADERS: "${TRUST_PROXY_HEADERS:-0}"
+    volumes:
+      - craut-uploads:/app/uploads
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).read()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  craut-postgres:
+  craut-uploads:

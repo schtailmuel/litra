@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Source Data</h1>
+      <p>{{ project.name }} &middot; {{ rows|length }} entries</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('project_detail', project_id=project.id) }}">Back</a>
+      <a class="button secondary" href="{{ url_for('project_source_data_jsonl', project_id=project.id) }}">Download JSONL</a>
+    </div>
+  </div>
+
+  <section class="form-panel">
+    <div class="text-table source-data-table">
+      <div class="text-table-head">
+        <span>ID</span>
+        <span>Source</span>
+        <span>Instructions</span>
+        <span>Metadata</span>
+        <span></span>
+      </div>
+      {% for row in rows %}
+        <a class="text-row" href="{{ url_for('source_data_edit', project_id=project.id, segment_id=row.id) }}">
+          <strong>{{ row.identifier }}</strong>
+          <span>{{ row.source_text }}</span>
+          <span>{{ row.instructions }}</span>
+          <span>{{ row.metadata }}</span>
+          <small>Edit</small>
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

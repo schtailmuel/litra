@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="auth-panel">
+    <h1>Create Account</h1>
+    <form method="post" class="stack">
+      {% if registration_token_required %}
+        <label>
+          Invite Token
+          <input name="token" value="{{ registration_token }}" autocomplete="off" required>
+        </label>
+      {% endif %}
+      <label>
+        Username
+        <input name="username" autocomplete="username" required minlength="3">
+      </label>
+      <label>
+        Password
+        <input name="password" type="password" autocomplete="new-password" required minlength="6">
+      </label>
+      <button type="submit">Create Account</button>
+    </form>
+  </section>
+{% endblock %}

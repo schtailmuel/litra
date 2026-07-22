@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block main_class %}public-page{% endblock %}
+{% block content %}
+  <section class="public-section about-hero">
+    <div class="public-section-inner">
+      <div class="public-text-block">
+        <p class="eyebrow">About 🪜 LITRA</p>
+        <h1>Workflow software for translation, post-editing, and review datasets</h1>
+        <p>
+          🪜 LITRA helps teams turn structured source data into reviewed multilingual
+          translation datasets. It is built for practical data work: importing
+          varied file formats, assigning texts, reviewing changes, collecting
+          comments, and exporting project data in formats that downstream research
+          and engineering workflows can use.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="public-section">
+    <div class="public-section-inner about-feature-grid">
+      <article>
+        <h2>Project Setup</h2>
+        <p>Create projects from JSONL or JSON, auto-detect schema keys, and map source text, source language, identifiers, instructions, seed translations, and translated instructions.</p>
+      </article>
+      <article>
+        <h2>Import Formats</h2>
+        <p>Define reusable import profiles for different data structures, including RhaetoChat-style JSONL and Bouquet-style JSON with sentence lists.</p>
+      </article>
+      <article>
+        <h2>Source Data</h2>
+        <p>Review and edit source identifiers, source language, source text, instructions, and metadata. Creator links support source-level review before translation work continues.</p>
+      </article>
+      <article>
+        <h2>Alternative Sources</h2>
+        <p>Upload additional source-language versions for the same segment IDs. Translators can switch source-language tabs while working.</p>
+      </article>
+      <article>
+        <h2>Language Management</h2>
+        <p>Add and remove target languages, upload translations for new languages, import existing translations as submitted work or post-editing drafts, and track progress per language.</p>
+      </article>
+      <article>
+        <h2>Translator Workspace</h2>
+        <p>Public translator links automatically claim available texts, autosave drafts, support comments, source flags, source tabs, sentence-list editing, and adjustable source/target font size.</p>
+      </article>
+      <article>
+        <h2>Review Workflows</h2>
+        <p>Create project-level reviewer links, compare translations across languages, edit translations in fast review tables, mark items reviewed, and track QA warnings and comments.</p>
+      </article>
+      <article>
+        <h2>Comments</h2>
+        <p>Import comments from CSV by identifier or metadata field, merge multiple rows per document or segment, and keep discussion threads tied to target languages.</p>
+      </article>
+      <article>
+        <h2>Manager Data Views</h2>
+        <p>Use language-level and project-level translation data pages to filter, inspect, edit, and export all translation slots across a project.</p>
+      </article>
+      <article>
+        <h2>Exports</h2>
+        <p>Download JSONL, TXT ZIP packages, selected-language JSONL, and DOCX exports with source-language grids and translation-language grids.</p>
+      </article>
+      <article>
+        <h2>Quality Signals</h2>
+        <p>Basic QA warnings highlight empty translations and suspicious mismatches such as missing numbers. Managers and reviewers can filter by warning state.</p>
+      </article>
+      <article>
+        <h2>Production Controls</h2>
+        <p>Includes hot-query indexes, upload-size limits, simple rate limits for public links and uploads, and a production guard that requires PostgreSQL.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="public-section public-section-muted">
+    <div class="public-section-inner public-plan">
+      <div class="public-text-block">
+        <p class="eyebrow">Typical Workflow</p>
+        <h2>From source file to reviewed dataset</h2>
+        <p>
+          A manager imports source data, selects or adapts an import format,
+          creates target languages, distributes translator links, reviews source
+          issues and translation comments, then exports the filtered or complete
+          dataset for release, analysis, or downstream model training.
+        </p>
+      </div>
+      <div class="public-data-grid">
+        <div>
+          <strong>1. Import</strong>
+          <span>Detect schema, map fields, and create project segments.</span>
+        </div>
+        <div>
+          <strong>2. Translate</strong>
+          <span>Assign public links and collect drafts or submitted translations.</span>
+        </div>
+        <div>
+          <strong>3. Review</strong>
+          <span>Edit, comment, flag source issues, and mark translations reviewed.</span>
+        </div>
+        <div>
+          <strong>4. Export</strong>
+          <span>Download JSONL, TXT, or DOCX views for filtered or full results.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>All Translation Data</h1>
+      <p>{{ project.name }} &middot; {{ text_count }} rows &middot; 500 per page</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('project_detail', project_id=project.id) }}">Back</a>
+      <a class="button secondary" href="{{ url_for('project_translation_data_docx', project_id=project.id, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Export Filtered DOCX</a>
+    </div>
+  </div>
+
+  <section class="form-panel work-panel">
+    <form method="get" class="filter-panel project-translation-filter">
+      <label>
+        Search
+        <input name="q" value="{{ filters.q }}" placeholder="ID, source, translation, instruction, comment">
+      </label>
+      <label>
+        Language
+        <select name="language">
+          <option value="">All languages</option>
+          {% for language in languages %}
+            <option value="{{ language }}" {% if filters.language|lower == language|lower %}selected{% endif %}>{{ language }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Status
+        <select name="status">
+          <option value="">Any status</option>
+          {% for status in TRANSLATION_STATUSES %}
+            <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status.replace("_", " ") }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="missing" value="1" {% if filters.missing %}checked{% endif %}>
+        Missing
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="comments" value="1" {% if filters.comments %}checked{% endif %}>
+        Comments
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="warnings" value="1" {% if filters.warnings %}checked{% endif %}>
+        QA
+      </label>
+      <div class="filter-actions">
+        <button type="submit">Filter</button>
+        <a class="button secondary" href="{{ url_for('project_translation_data', project_id=project.id) }}">Clear</a>
+        <a class="button secondary" href="{{ url_for('project_translation_data_docx', project_id=project.id, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Export DOCX</a>
+      </div>
+    </form>
+
+    <div class="overview-grid compact-overview">
+      <div><strong>{{ overview.total }}</strong><span>slots</span></div>
+      <div><strong>{{ overview.missing }}</strong><span>missing</span></div>
+      <div><strong>{{ overview.draft }}</strong><span>draft</span></div>
+      <div><strong>{{ overview.submitted }}</strong><span>submitted</span></div>
+      <div><strong>{{ overview.needs_revision }}</strong><span>needs revision</span></div>
+      <div><strong>{{ overview.approved }}</strong><span>approved</span></div>
+      <div><strong>{{ overview.warnings }}</strong><span>QA</span></div>
+      <div><strong>{{ overview.comments }}</strong><span>comments</span></div>
+    </div>
+
+    <form method="post" action="{{ url_for('project_translation_data_batch', project_id=project.id) }}" class="stack">
+      <input type="hidden" name="page" value="{{ page }}">
+      <input type="hidden" name="q" value="{{ filters.q }}">
+      <input type="hidden" name="language" value="{{ filters.language }}">
+      <input type="hidden" name="status" value="{{ filters.status }}">
+      <input type="hidden" name="missing" value="{{ filters.missing }}">
+      <input type="hidden" name="comments" value="{{ filters.comments }}">
+      <input type="hidden" name="warnings" value="{{ filters.warnings }}">
+
+      <div class="page-head compact-head">
+        <h2>Rows</h2>
+        <div class="pagination">
+          {% if page > 1 %}
+            <a class="button secondary" href="{{ url_for('project_translation_data', project_id=project.id, page=page - 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Previous</a>
+          {% endif %}
+          {% if page * per_page < text_count %}
+            <a class="button secondary" href="{{ url_for('project_translation_data', project_id=project.id, page=page + 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Next</a>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="batch-actions project-batch-actions">
+        <label class="checkbox-label">
+          <input id="selectVisibleRows" type="checkbox">
+          Select visible
+        </label>
+        <label class="checkbox-label">
+          <input name="apply_all_filtered" type="checkbox" value="1">
+          Apply to all {{ text_count }} filtered rows
+        </label>
+        <label>
+          Set status
+          <select name="batch_status" required>
+            {% for status in TRANSLATION_STATUSES %}
+              <option value="{{ status }}">{{ status.replace("_", " ") }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="secondary">Update Status</button>
+      </div>
+
+      <div class="text-table project-translation-data-table">
+        <div class="text-table-head">
+          <span></span>
+          <span>ID</span>
+          <span>Language</span>
+          <span>Source</span>
+          <span>Translation</span>
+          <span>Instructions / Comment</span>
+          <span>Status</span>
+          <span></span>
+        </div>
+        {% for row in rows %}
+          <div class="text-row">
+            <input type="checkbox" name="translation_slots" value="{{ row.segment_id }}::{{ row.target_language }}" aria-label="Select {{ row.identifier }} {{ row.target_language }}">
+            <strong>{{ row.identifier }}</strong>
+            <span>{{ row.target_language }}</span>
+            <span>{{ row.source_text }}</span>
+            <span>{{ row.display_target }}</span>
+            <span>
+              {% if row.display_instructions %}
+                {{ row.display_instructions }}
+              {% elif row.display_comment %}
+                {{ row.display_comment }}
+              {% else %}
+                {{ row.instructions }}
+              {% endif %}
+            </span>
+            <small>
+              {{ row.status.replace("_", " ") }}
+              {% if row.qa_warnings|qa_count %}
+                <br>{{ row.qa_warnings|qa_count }} warning(s)
+              {% endif %}
+              {% if row.draft_text|trim and row.status != "draft" %}
+                <br>has draft
+              {% endif %}
+            </small>
+            <small>
+              <a href="{{ url_for('language_translation_data_edit', project_id=project.id, target_language=row.target_language, segment_id=row.segment_id) }}">Edit</a>
+            </small>
+          </div>
+        {% else %}
+          <div class="empty-state">
+            <h2>No rows match the filters</h2>
+            <p>Clear the filters or try a broader search.</p>
+          </div>
+        {% endfor %}
+      </div>
+    </form>
+  </section>
+  <script>
+    const selectVisibleRows = document.querySelector("#selectVisibleRows");
+    if (selectVisibleRows) {
+      selectVisibleRows.addEventListener("change", () => {
+        document
+          .querySelectorAll('input[name="translation_slots"]')
+          .forEach((checkbox) => {
+            checkbox.checked = selectVisibleRows.checked;
+          });
+      });
+    }
+  </script>
+{% endblock %}

@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ project.name }}</h1>
+      <p>{{ segment_count }} segments from {{ project.source_language }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('project_source_data', project_id=project.id) }}">Source Data</a>
+      <a class="button secondary" href="{{ url_for('project_translation_data', project_id=project.id) }}">All Translation Data</a>
+      <a class="button secondary" href="{{ url_for('project_update_import', project_id=project.id) }}">Update Import</a>
+    </div>
+  </div>
+
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Source Languages</h2>
+        <p class="muted">The primary source is always available. Uploaded alternatives appear as source tabs for translators.</p>
+      </div>
+    </div>
+    <div class="source-language-list">
+      {% for row in source_rows %}
+        <div class="source-language-row">
+          <div class="link-summary">
+            <strong>{{ row.source_language }}</strong>
+            <small>{{ "Primary source" if row.is_default else "Alternative source" }}</small>
+          </div>
+          <span>{{ row.segment_count }} / {{ segment_count }} segments</span>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="form-panel">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Languages</h2>
+        <p class="muted">Create target languages, then open each language to assign translators and review progress.</p>
+      </div>
+    </div>
+
+    <div class="language-management-bar">
+      <form method="post" class="add-language-inline">
+        <input type="hidden" name="action" value="add_language">
+        <label>
+          Add language
+          <input name="target_language" placeholder="e.g. Quechua" required>
+        </label>
+        <button type="submit">Add Language</button>
+      </form>
+
+      {% if language_rows %}
+        <div class="page-actions language-list-actions">
+          <button form="languageExportForm" type="submit" class="secondary">Export Selected DOCX</button>
+          <button
+            form="languageExportForm"
+            type="submit"
+            class="secondary"
+            formaction="{{ url_for('export_project_jsonl_multi', project_id=project.id) }}"
+            formmethod="post"
+          >
+            Export Selected JSONL
+          </button>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if language_rows %}
+      <div class="language-list-header">
+        <strong>Language</strong>
+        <span>Translators</span>
+        <span>Assignments</span>
+        <span></span>
+      </div>
+      <form id="languageExportForm" method="post" action="{{ url_for('export_project_docx', project_id=project.id) }}" class="language-list">
+        {% for row in language_rows %}
+          {% set percent = (row.completed_segments * 100 / row.total_segments)|round(0, 'floor') if row.total_segments else 0 %}
+          <div class="language-row">
+            <input type="checkbox" name="languages" value="{{ row.target_language }}" checked aria-label="Export {{ row.target_language }}">
+            <div class="link-summary">
+              <strong>{{ row.target_language }}</strong>
+              <div class="meter" aria-label="{{ percent }} percent complete">
+                <span style="width: {{ percent }}%"></span>
+              </div>
+              <small>{{ row.completed_segments }} / {{ row.total_segments }} complete</small>
+              <small>{{ row.warning_segments }} QA warning(s) &middot; {{ row.needs_revision_segments }} need review &middot; {{ row.approved_segments }} approved</small>
+            </div>
+            <span>{{ row.translator_count }} translators</span>
+            <span>{{ row.submitted_assignments }} / {{ row.total_assignments }} assigned</span>
+            <div class="language-actions">
+              <a class="button secondary" href="{{ url_for('language_detail', project_id=project.id, target_language=row.target_language) }}">Open</a>
+              <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=row.target_language) }}">Data</a>
+              <a class="button secondary danger-text-button" href="{{ url_for('language_detail', project_id=project.id, target_language=row.target_language) }}#remove-language">Remove</a>
+            </div>
+          </div>
+        {% endfor %}
+      </form>
+    {% else %}
+      <div class="empty-state">
+        <h2>No target languages yet</h2>
+        <p>Add a language above, or upload JSONL translations below.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <datalist id="projectLanguageOptions">
+    {% for row in language_rows %}
+      <option value="{{ row.target_language }}"></option>
+    {% endfor %}
+  </datalist>
+  <datalist id="sourceLanguageOptions">
+    <option value="{{ project.source_language }}"></option>
+    {% for row in source_rows %}
+      <option value="{{ row.source_language }}"></option>
+    {% endfor %}
+    {% for row in language_rows %}
+      <option value="{{ row.target_language }}"></option>
+    {% endfor %}
+  </datalist>
+  <datalist id="commentMatchKeyOptions">
+    <option value="identifier"></option>
+    <option value="ordinal"></option>
+    <option value="message_id"></option>
+    <option value="id"></option>
+    <option value="pid"></option>
+    <option value="par_id"></option>
+    <option value="uniq_id"></option>
+    {% for key in metadata_keys %}
+      <option value="{{ key }}"></option>
+      <option value="metadata.{{ key }}"></option>
+    {% endfor %}
+  </datalist>
+
+  <details class="form-panel section-gap collapsible-panel">
+    <summary>
+      <span>
+        <strong>Upload Language Translations</strong>
+        <small>Import a JSONL file for a new or existing language.</small>
+      </span>
+    </summary>
+    <form method="post" enctype="multipart/form-data" class="language-upload-form">
+      <input type="hidden" name="action" value="upload_language_translations">
+      <label>
+        Language name
+        <input id="uploadTargetLanguage" name="upload_target_language" list="projectLanguageOptions" placeholder="e.g. Ladin">
+      </label>
+      <label>
+        JSONL file
+        <input id="translationJsonlInput" name="translation_jsonl" type="file" accept=".jsonl,application/x-ndjson,application/jsonl,text/plain" required>
+      </label>
+      <label>
+        Message ID key
+        <select id="translationMessageIdKey" name="message_id_key" required>
+          <option value="message_id">message_id</option>
+          <option value="identifier">identifier</option>
+          <option value="id">id</option>
+        </select>
+      </label>
+      <label>
+        Translation text key
+        <select id="translationTextKey" name="translation_text_key" required>
+          <option value="">Choose translation key</option>
+          <option value="translation">translation</option>
+          <option value="target_text">target_text</option>
+          <option value="tgt_text">tgt_text</option>
+          <option value="translated_text">translated_text</option>
+        </select>
+      </label>
+      <label>
+        Language key
+        <select id="translationLanguageKey" name="translation_language_key">
+          <option value="">Use language name above</option>
+          <option value="target_language">target_language</option>
+          <option value="tgt_lang">tgt_lang</option>
+          <option value="language">language</option>
+        </select>
+      </label>
+      <label>
+        Comment key
+        <select id="translationCommentKey" name="translation_comment_key">
+          <option value="">No comment key</option>
+          <option value="comment">comment</option>
+          <option value="tgt_comment">tgt_comment</option>
+        </select>
+      </label>
+      <label>
+        Translated instruction key
+        <select id="uploadTranslatedInstructionKey" name="translated_instruction_key">
+          <option value="">No translated instruction key</option>
+          <option value="translated_instruction">translated_instruction</option>
+          <option value="target_instruction">target_instruction</option>
+          <option value="tgt_instruction">tgt_instruction</option>
+        </select>
+      </label>
+      <label>
+        Import status
+        <select name="uploaded_translation_status">
+          <option value="submitted">Submitted: ready for review</option>
+          <option value="draft">Post-editing draft: translators can claim</option>
+        </select>
+      </label>
+      <div class="upload-schema-panel">
+        <strong id="translationSchemaStatus">Choose a file to detect translation keys.</strong>
+        <div class="upload-schema-summary" id="translationSchemaSummary">
+          <span>Detected key coverage and examples will appear here.</span>
+        </div>
+        <pre class="schema-example"><code id="translationSampleRow">{"message_id":"m-001","translation":"..."}</code></pre>
+      </div>
+      <button type="submit">Upload Translations</button>
+    </form>
+  </details>
+
+  <details class="form-panel section-gap collapsible-panel">
+    <summary>
+      <span>
+        <strong>Upload Alternative Source Texts</strong>
+        <small>Import translations or source copies that translators can use as source-language tabs.</small>
+      </span>
+    </summary>
+    <form method="post" enctype="multipart/form-data" class="language-upload-form">
+      <input type="hidden" name="action" value="upload_source_variants">
+      <label>
+        Source language name
+        <input id="sourceVariantLanguage" name="variant_source_language" list="sourceLanguageOptions" placeholder="e.g. English">
+      </label>
+      <label>
+        Source file
+        <input id="sourceVariantFile" name="source_variant_file" type="file" accept=".json,.jsonl,application/json,application/x-ndjson,application/jsonl,text/plain" required>
+      </label>
+      <label>
+        File type
+        <select id="sourceVariantFileType" name="source_variant_file_type">
+          <option value="jsonl">JSONL</option>
+          <option value="json">JSON</option>
+        </select>
+      </label>
+      <label>
+        Rows path for JSON
+        <input id="sourceVariantRowsPath" name="source_variant_rows_path" placeholder="translations">
+      </label>
+      <label>
+        Segment ID key
+        <select id="sourceVariantIdKey" name="source_variant_id_key" required>
+          <option value="identifier">identifier</option>
+          <option value="message_id">message_id</option>
+          <option value="id">id</option>
+          <option value="uniq_id">uniq_id</option>
+          <option value="pid">pid</option>
+        </select>
+      </label>
+      <label>
+        Source text key
+        <select id="sourceVariantTextKey" name="source_variant_text_key" required>
+          <option value="">Choose source text key</option>
+          <option value="source_text">source_text</option>
+          <option value="src_text">src_text</option>
+          <option value="text">text</option>
+          <option value="translation">translation</option>
+          <option value="target_text">target_text</option>
+          <option value="tgt_text">tgt_text</option>
+          <option value="translated_text">translated_text</option>
+          <option value="sentences">sentences</option>
+        </select>
+      </label>
+      <label>
+        Language key
+        <select id="sourceVariantLanguageKey" name="source_variant_language_key">
+          <option value="">Use source language name above</option>
+          <option value="source_language">source_language</option>
+          <option value="src_lang">src_lang</option>
+          <option value="language">language</option>
+          <option value="target_language">target_language</option>
+          <option value="tgt_lang">tgt_lang</option>
+        </select>
+      </label>
+      <label>
+        Instruction key
+        <select id="sourceVariantInstructionKey" name="source_variant_instruction_key">
+          <option value="">No instruction key</option>
+          <option value="instructions">instructions</option>
+          <option value="instruction">instruction</option>
+          <option value="response">response</option>
+          <option value="source_instruction">source_instruction</option>
+        </select>
+      </label>
+      <label class="checkbox-label source-edit-toggle">
+        <input id="sourceVariantTextIsList" type="checkbox" name="source_variant_text_is_list" value="1">
+        Source text is a list of sentences
+      </label>
+      <p class="form-note span-full">
+        Use this when an existing translation should become an additional source text. Rows are matched by segment ID; the primary source language is not overwritten.
+      </p>
+      <div class="upload-schema-panel">
+        <strong id="sourceVariantSchemaStatus">Choose a file to detect source keys.</strong>
+        <div class="upload-schema-summary" id="sourceVariantSchemaSummary">
+          <span>Detected key coverage and examples will appear here.</span>
+        </div>
+        <pre class="schema-example"><code id="sourceVariantSampleRow">{"identifier":"m-001","translation":"..."}</code></pre>
+      </div>
+      <button type="submit">Upload Source Texts</button>
+    </form>
+  </details>
+
+  <details class="form-panel section-gap collapsible-panel">
+    <summary>
+      <span>
+        <strong>Import Language Comments</strong>
+        <small>Upload CSV comments matched by segment ID, paragraph ID, or metadata key.</small>
+      </span>
+    </summary>
+    <form method="post" enctype="multipart/form-data" class="language-upload-form">
+      <input type="hidden" name="action" value="upload_language_comments">
+      <label>
+        Language name
+        <input name="comment_target_language" list="projectLanguageOptions" placeholder="e.g. Ladin" required>
+      </label>
+      <label>
+        CSV file
+        <input name="comment_csv" type="file" accept=".csv,text/csv,text/plain" required>
+      </label>
+      <label>
+        Match first column against
+        <input name="comment_match_key" list="commentMatchKeyOptions" value="identifier" required>
+      </label>
+      <label>
+        Comment role
+        <select name="comment_import_role">
+          <option value="reviewer">Reviewer</option>
+          <option value="manager">Manager</option>
+          <option value="translator">Translator</option>
+        </select>
+      </label>
+      <label class="checkbox-label source-edit-toggle">
+        <input type="checkbox" name="comment_csv_has_header" value="1" checked>
+        First row is a header
+      </label>
+      <p class="form-note span-full">
+        The first CSV column is matched against the selected segment field or metadata key. All matching sentence rows receive the comment, so paragraph-level IDs such as par_id can annotate every sentence in that paragraph.
+      </p>
+      <button type="submit">Import Comments</button>
+    </form>
+  </details>
+
+  <section class="split section-gap">
+    <div class="form-panel">
+      <h2>Add Creator</h2>
+      <form method="post" class="inline-form">
+        <input type="hidden" name="action" value="create_creator_link">
+        <label>
+          Creator name
+          <input name="creator_name" placeholder="Creator" required>
+        </label>
+        <button type="submit">Create Link</button>
+      </form>
+    </div>
+
+    <div class="form-panel">
+      <h2>Creator Links</h2>
+      {% if creator_links %}
+        <div class="link-list">
+          {% for link in creator_links %}
+            {% set creator_url = url_for('creator_source_review', token=link.token, _external=True) %}
+            <div class="review-link-row">
+              <div class="link-summary">
+                <strong>{{ link.creator_name or "Creator" }}</strong>
+                <small>{{ link.reviewed_sources }} / {{ link.total_sources }} source reviewed</small>
+              </div>
+              <label>
+                Access URL
+                <input readonly value="{{ creator_url }}" onfocus="this.select()">
+              </label>
+              <a class="button secondary" href="{{ creator_url }}">Open Source Review</a>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">No creator source-review links yet.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="split section-gap">
+    <div class="form-panel">
+      <h2>Add Reviewer</h2>
+      <form method="post" class="inline-form">
+        <input type="hidden" name="action" value="create_reviewer_link">
+        <label>
+          Reviewer name
+          <input name="reviewer_name" placeholder="Reviewer" required>
+        </label>
+        <button type="submit">Create Link</button>
+      </form>
+    </div>
+
+    <div class="form-panel">
+      <h2>Reviewer Links</h2>
+      {% if review_links %}
+        <div class="link-list">
+          {% for link in review_links %}
+            {% set review_url = url_for('review_project', token=link.token, _external=True) %}
+            <div class="review-link-row">
+              <div class="link-summary">
+                <strong>{{ link.reviewer_name or "Reviewer" }}</strong>
+                <small>{{ link.reviewed_translations }} / {{ link.total_translations }} reviewed</small>
+              </div>
+              <label>
+                Access URL
+                <input readonly value="{{ review_url }}" onfocus="this.select()">
+              </label>
+              <a class="button secondary" href="{{ review_url }}">Open Review</a>
+              <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, _external=True) }}">Open Fast List</a>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">No project-level reviewer links yet.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="form-panel section-gap danger-panel">
+    <h2>Delete Project</h2>
+    <p>
+      This permanently deletes the project, its source texts, languages,
+      translator links, claims, comments, flags, and translations.
+    </p>
+    <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}" class="delete-confirm-form">
+      <label>
+        Type <strong>{{ project.name }}</strong> to confirm
+        <input name="project_name" autocomplete="off" required>
+      </label>
+      <button type="submit" class="danger-button">Delete Project</button>
+    </form>
+  </section>
+  <script src="{{ url_for('static', filename='project_detail.js') }}?v={{ STATIC_VERSION }}"></script>
+{% endblock %}
