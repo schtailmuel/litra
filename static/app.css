@@ -2115,17 +2115,19 @@ button.danger-text-button:hover {
   margin-top: 0.65rem;
 }
 
-.instruction-translation textarea {
-  min-height: 4.5rem;
-  max-height: 10rem;
-  resize: vertical;
+.instruction-divider {
+  margin: 0.6rem 0 0.45rem;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.instruction-translated-content {
   color: var(--muted);
   font-style: italic;
-  line-height: 1.55;
 }
 
 .instruction-box.has-target-instruction .markdown-body {
-  max-height: 8rem;
+  max-height: 12rem;
 }
 
 .source-box p,

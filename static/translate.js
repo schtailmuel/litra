@@ -44,7 +44,6 @@ const els = {
   textFontSizeSlider: document.querySelector("#textFontSizeSlider"),
   textFontSizeValue: document.querySelector("#textFontSizeValue"),
   targetInstructions: document.querySelector("#targetInstructions"),
-  targetInstructionPane: document.querySelector("#targetInstructionPane"),
   targetPreview: document.querySelector("#targetPreview"),
   commentList: document.querySelector("#commentList"),
   commentBody: document.querySelector("#commentBody"),
@@ -246,9 +245,9 @@ function collectTranslationPayload() {
   }
   return {
     target_text: els.targetText.value,
-    target_instructions: els.targetInstructionPane.classList.contains("hidden")
-      ? ""
-      : els.targetInstructions.value,
+    target_instructions: els.instructionPanel.classList.contains("has-target-instruction")
+      ? els.targetInstructions.value
+      : "",
   };
 }
 
@@ -263,6 +262,7 @@ function setTranslationPayload(targetText = "", targetInstructions = "") {
   els.targetText.value = targetText || "";
   els.targetInstructions.value = targetInstructions || "";
   els.targetPreview.innerHTML = renderMarkdown(els.targetText.value);
+  renderInstructionArea();
 }
 
 function translationSnapshot(payload = collectTranslationPayload()) {
@@ -282,7 +282,6 @@ function clearFormatView() {
   els.sentenceEditor.classList.add("hidden");
   els.sentenceEditor.innerHTML = "";
   els.targetText.parentElement.classList.remove("hidden");
-  els.targetInstructionPane.classList.add("hidden");
   els.targetTextLabel.textContent = "Translation";
 }
 
@@ -342,9 +341,38 @@ function applyEditorView(segment, preserveTarget = false) {
   }
   if (view === "dual_field") {
     els.targetTextLabel.textContent = "Text Translation";
-    els.targetInstructionPane.classList.remove("hidden");
     els.instructionPanel.classList.add("has-target-instruction");
   }
+}
+
+function instructionTextForSegment(segment) {
+  if (!segment) {
+    return "";
+  }
+  const source = activeSourceVariant(segment);
+  const defaultInstruction = `Translate from ${source.source_language || segment.source_language} to ${state.targetLanguage}.`;
+  const extraInstructions = source.instructions || segment.instructions || "";
+  return extraInstructions
+    ? `${defaultInstruction}\n\n${extraInstructions}`
+    : defaultInstruction;
+}
+
+function translatedInstructionForSegment(segment) {
+  if (!segment || activeEditorView(segment) !== "dual_field") {
+    return "";
+  }
+  return segment.draft_instructions || segment.target_instructions || els.targetInstructions.value || "";
+}
+
+function renderInstructionArea(segment = state.currentSegment) {
+  const instructionText = instructionTextForSegment(segment);
+  const translatedInstruction = translatedInstructionForSegment(segment).trim();
+  let html = renderMarkdown(instructionText);
+  if (translatedInstruction) {
+    html += `<div class="instruction-divider">---</div>`;
+    html += `<div class="instruction-translated-content">${renderMarkdown(translatedInstruction)}</div>`;
+  }
+  els.instructions.innerHTML = html;
 }
 
 function renderSourceTabs(segment) {
@@ -370,15 +398,10 @@ function renderSourceTabs(segment) {
 
 function renderSourceArea(segment, preserveTarget = false) {
   const source = activeSourceVariant(segment);
-  const defaultInstruction = `Translate from ${source.source_language || segment.source_language} to ${state.targetLanguage}.`;
-  const extraInstructions = source.instructions || segment.instructions || "";
-  const instructionText = extraInstructions
-    ? `${defaultInstruction}\n\n${extraInstructions}`
-    : defaultInstruction;
   const status = (segment.status || "untranslated").replace("_", " ");
   els.segmentMeta.textContent = `${source.source_language || segment.source_language} to ${state.targetLanguage} | ${status} | version ${segment.version}`;
   els.sourceText.innerHTML = renderMarkdown(source.source_text || "");
-  els.instructions.innerHTML = renderMarkdown(instructionText);
+  renderInstructionArea(segment);
   renderSourceTabs(segment);
   applyEditorView(segment, preserveTarget);
 }
