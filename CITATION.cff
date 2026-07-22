@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use LITRA in research or dataset preparation, please cite it."
+title: "LITRA: A Translation Workflow Tool For Multilingual Data Projects"
+authors:
+  - name: "The LITRA contributors"
+repository-code: "https://github.com/schtailmuel/litra"
+license: "Apache-2.0"
+date-released: "2026-07-22"
+keywords:
+  - translation
+  - multilingual data
+  - dataset preparation
+  - Flask
