@@ -98,6 +98,11 @@
             </form>
             <div class="link-actions">
               <a class="button secondary" href="{{ share_url }}">Open Workspace</a>
+              <form method="post" onsubmit="return confirm('Remove this translator access URL? Translations, comments, and saved history will be kept.');">
+                <input type="hidden" name="action" value="revoke_translator_link">
+                <input type="hidden" name="link_id" value="{{ link.id }}">
+                <button type="submit" class="secondary danger-text-button">Remove</button>
+              </form>
             </div>
           </div>
         {% endfor %}

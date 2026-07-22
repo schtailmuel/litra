@@ -505,10 +505,14 @@ def init_postgres_schema(conn):
             credit_limit INTEGER,
             start_ordinal INTEGER,
             end_ordinal INTEGER,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            revoked_at TEXT,
+            revoked_by TEXT
         )
         """
     )
+    conn.execute("ALTER TABLE share_links ADD COLUMN IF NOT EXISTS revoked_at TEXT")
+    conn.execute("ALTER TABLE share_links ADD COLUMN IF NOT EXISTS revoked_by TEXT")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS translation_events (
@@ -713,7 +717,9 @@ def init_db():
                 credit_limit INTEGER,
                 start_ordinal INTEGER,
                 end_ordinal INTEGER,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                revoked_at TEXT,
+                revoked_by TEXT
             );
 
             """
@@ -890,6 +896,10 @@ def migrate_schema(conn):
         conn.execute("ALTER TABLE share_links ADD COLUMN start_ordinal INTEGER")
     if "end_ordinal" not in share_columns:
         conn.execute("ALTER TABLE share_links ADD COLUMN end_ordinal INTEGER")
+    if "revoked_at" not in share_columns:
+        conn.execute("ALTER TABLE share_links ADD COLUMN revoked_at TEXT")
+    if "revoked_by" not in share_columns:
+        conn.execute("ALTER TABLE share_links ADD COLUMN revoked_by TEXT")
 
     for index in conn.execute("PRAGMA index_list(share_links)").fetchall():
         if not index["unique"]:
@@ -956,7 +966,9 @@ def rebuild_share_links(conn):
             credit_limit INTEGER,
             start_ordinal INTEGER,
             end_ordinal INTEGER,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            revoked_at TEXT,
+            revoked_by TEXT
         )
         """
     )
@@ -973,7 +985,9 @@ def rebuild_share_links(conn):
                 credit_limit,
                 start_ordinal,
                 end_ordinal,
-                created_at
+                created_at,
+                revoked_at,
+                revoked_by
             )
         SELECT id,
                project_id,
@@ -984,7 +998,9 @@ def rebuild_share_links(conn):
                credit_limit,
                start_ordinal,
                end_ordinal,
-               created_at
+               created_at,
+               NULL,
+               NULL
         FROM share_links_old
         """
     )
@@ -4355,6 +4371,7 @@ def project_detail(project_id):
                        COALESCE(SUM(credit_limit), 0) AS total_credits
                 FROM share_links
                 WHERE project_id = ?
+                  AND revoked_at IS NULL
                 GROUP BY target_language
             ),
             claim_stats AS (
@@ -4366,6 +4383,7 @@ def project_detail(project_id):
                   ON c.share_link_id = sl.id
                  AND c.status = 'completed'
                 WHERE sl.project_id = ?
+                  AND sl.revoked_at IS NULL
                 GROUP BY sl.target_language
             )
             SELECT tl.target_language,
@@ -4690,6 +4708,63 @@ def language_detail(project_id, target_language):
     if request.method == "POST":
         action = request.form.get("action", "create_link")
         with db() as conn:
+            if action == "revoke_translator_link":
+                try:
+                    link_id = parse_optional_int(request.form.get("link_id"), "Link")
+                except ValueError as exc:
+                    flash(str(exc))
+                    return redirect(
+                        url_for(
+                            "language_detail",
+                            project_id=project_id,
+                            target_language=target_language,
+                        )
+                    )
+                if link_id is None:
+                    abort(400)
+                link = conn.execute(
+                    """
+                    SELECT * FROM share_links
+                    WHERE id = ?
+                      AND project_id = ?
+                      AND lower(target_language) = lower(?)
+                      AND revoked_at IS NULL
+                    """,
+                    (link_id, project_id, target_language),
+                ).fetchone()
+                if not link:
+                    abort(404)
+                stamp = now_iso()
+                conn.execute(
+                    """
+                    UPDATE share_links
+                       SET revoked_at = ?,
+                           revoked_by = ?
+                     WHERE id = ?
+                    """,
+                    (stamp, user["username"], link_id),
+                )
+                conn.execute(
+                    """
+                    DELETE FROM translation_claims
+                    WHERE share_link_id = ?
+                      AND status = 'claimed'
+                    """,
+                    (link_id,),
+                )
+                conn.commit()
+                flash(
+                    f"Translator access for '{link['translator_name'] or target_language}' revoked. "
+                    "Translations, comments, and saved history were kept."
+                )
+                return redirect(
+                    url_for(
+                        "language_detail",
+                        project_id=project_id,
+                        target_language=target_language,
+                    )
+                )
+
             if action in {"update_assignments", "update_credits"}:
                 try:
                     link_id = parse_optional_int(request.form.get("link_id"), "Link")
@@ -4723,6 +4798,7 @@ def language_detail(project_id, target_language):
                     WHERE id = ?
                       AND project_id = ?
                       AND lower(target_language) = lower(?)
+                      AND revoked_at IS NULL
                     """,
                     (link_id, project_id, target_language),
                 ).fetchone()
@@ -4800,6 +4876,7 @@ def language_detail(project_id, target_language):
               ON c.share_link_id = sl.id
             WHERE sl.project_id = ?
               AND lower(sl.target_language) = lower(?)
+              AND sl.revoked_at IS NULL
             GROUP BY sl.id
             ORDER BY sl.created_at
             """,
@@ -4817,6 +4894,7 @@ def language_detail(project_id, target_language):
               ON c.share_link_id = sl.id
             WHERE sl.project_id = ?
               AND lower(sl.target_language) = lower(?)
+              AND sl.revoked_at IS NULL
             GROUP BY sl.translator_name
             ORDER BY submitted_assignments DESC, sl.translator_name
             """,
@@ -7286,6 +7364,7 @@ def translate(token):
             FROM share_links sl
             JOIN projects p ON p.id = sl.project_id
             WHERE sl.token = ?
+              AND sl.revoked_at IS NULL
             """,
             (token,),
         ).fetchone()
@@ -7301,6 +7380,7 @@ def link_for_token(conn, token):
         FROM share_links sl
         JOIN projects p ON p.id = sl.project_id
         WHERE sl.token = ?
+          AND sl.revoked_at IS NULL
         """,
         (token,),
     ).fetchone()
@@ -7546,7 +7626,10 @@ def translator_translation_edit(token, segment_id):
 @app.get("/api/t/<token>/segments")
 def api_segments(token):
     with db() as conn:
-        link = conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
+        link = conn.execute(
+            "SELECT * FROM share_links WHERE token = ? AND revoked_at IS NULL",
+            (token,),
+        ).fetchone()
         if not link:
             abort(404)
 
@@ -7596,7 +7679,10 @@ def api_segments(token):
 @app.get("/api/t/<token>/status")
 def api_link_status(token):
     with db() as conn:
-        link = conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
+        link = conn.execute(
+            "SELECT * FROM share_links WHERE token = ? AND revoked_at IS NULL",
+            (token,),
+        ).fetchone()
         if not link:
             abort(404)
 
@@ -7716,7 +7802,10 @@ def recent_submissions(conn, link, limit=3):
 @app.post("/api/t/<token>/next")
 def api_next_segment(token):
     with db() as conn:
-        link = conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
+        link = conn.execute(
+            "SELECT * FROM share_links WHERE token = ? AND revoked_at IS NULL",
+            (token,),
+        ).fetchone()
         if not link:
             abort(404)
 
@@ -7832,7 +7921,10 @@ def api_next_segment(token):
 @app.post("/api/t/<token>/segments/<int:segment_id>/skip")
 def api_skip_segment(token, segment_id):
     with db() as conn:
-        link = conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
+        link = conn.execute(
+            "SELECT * FROM share_links WHERE token = ? AND revoked_at IS NULL",
+            (token,),
+        ).fetchone()
         if not link:
             abort(404)
 
@@ -7898,7 +7990,10 @@ def api_skip_segment(token, segment_id):
 
 
 def require_link_segment_claim(conn, token, segment_id):
-    link = conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
+    link = conn.execute(
+        "SELECT * FROM share_links WHERE token = ? AND revoked_at IS NULL",
+        (token,),
+    ).fetchone()
     if not link:
         abort(404)
 
@@ -8062,7 +8157,10 @@ def api_save_draft(token, segment_id):
     draft_comment = str(payload.get("comment", ""))
 
     with db() as conn:
-        link = conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
+        link = conn.execute(
+            "SELECT * FROM share_links WHERE token = ? AND revoked_at IS NULL",
+            (token,),
+        ).fetchone()
         if not link:
             abort(404)
         translator = link_translator_name(link)
@@ -8166,7 +8264,10 @@ def api_save_segment(token, segment_id):
     client_version = int(payload.get("version", 0))
 
     with db() as conn:
-        link = conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
+        link = conn.execute(
+            "SELECT * FROM share_links WHERE token = ? AND revoked_at IS NULL",
+            (token,),
+        ).fetchone()
         if not link:
             abort(404)
         translator = link_translator_name(link)
