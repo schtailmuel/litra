@@ -1,219 +1,175 @@
 # Apache Deployment Guide
 
-This guide explains how to deploy the CRAUT application on an Apache server alongside other applications.
+This guide explains how to deploy LITRA on an Apache server alongside other
+applications.
 
 ## Prerequisites
 
-1. **Apache with mod_wsgi**: Install Apache and the WSGI module
+1. Install Apache and mod_wsgi:
+
    ```bash
    sudo apt update
    sudo apt install apache2 libapache2-mod-wsgi-py3
    ```
 
-2. **Python Virtual Environment**: Set up a virtual environment
+2. Set up a Python virtual environment:
+
    ```bash
-   cd /home/samuel/uibk/projects/craut
+   cd /home/samuel/uibk/projects/litra
    python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
    ```
 
-3. **Enable Apache Modules**:
+3. Enable Apache modules:
+
    ```bash
    sudo a2enmod wsgi ssl headers rewrite
    ```
 
 ## Deployment Options
 
-### Option 1: Subdomain (Recommended)
-Deploy at `craut.yourdomain.com`
+### Option 1: Subdomain
 
-1. **Copy configuration**:
-   ```bash
-   sudo cp apache-config-subdomain.conf /etc/apache2/sites-available/craut.conf
-   ```
+Deploy at `litra.yourdomain.com`.
 
-2. **Edit the configuration**:
-   ```bash
-   sudo nano /etc/apache2/sites-available/craut.conf
-   ```
-   - Replace `craut.yourdomain.com` with your actual subdomain
-   - Update SSL certificate paths if using HTTPS
-   - Adjust `python-home` path if your venv is elsewhere
-   - Update file paths if your app is in a different location
+```bash
+sudo cp apache-config-subdomain.conf /etc/apache2/sites-available/litra.conf
+sudo nano /etc/apache2/sites-available/litra.conf
+sudo a2ensite litra
+sudo systemctl reload apache2
+```
 
-3. **Set permissions**:
-   ```bash
-   # Allow Apache to read the application
-   sudo chown -R www-data:www-data /home/samuel/uibk/projects/craut/uploads
-   sudo chown -R www-data:www-data /home/samuel/uibk/projects/craut/data
-   sudo chmod -R 755 /home/samuel/uibk/projects/craut
-   ```
-
-4. **Enable the site**:
-   ```bash
-   sudo a2ensite craut
-   sudo systemctl reload apache2
-   ```
+Update the server name, SSL certificate paths, virtual environment path, and
+application path in the copied Apache config.
 
 ### Option 2: Subpath
-Deploy at `yourdomain.com/craut`
 
-1. **Modify app.py** to add application root:
-   ```python
-   # Add this after app = Flask(__name__)
-   app.config["APPLICATION_ROOT"] = "/craut"
-   ```
+Deploy at `yourdomain.com/litra`.
 
-2. **Edit your existing VirtualHost**:
-   ```bash
-   sudo nano /etc/apache2/sites-available/yourdomain.conf
-   ```
-   Add the content from `apache-config-subpath.conf` inside your existing `<VirtualHost>` block.
+Set the application root in the environment or in `app.py`:
 
-3. **Set permissions** (same as Option 1):
-   ```bash
-   sudo chown -R www-data:www-data /home/samuel/uibk/projects/craut/uploads
-   sudo chown -R www-data:www-data /home/samuel/uibk/projects/craut/data
-   sudo chmod -R 755 /home/samuel/uibk/projects/craut
-   ```
+```bash
+APPLICATION_ROOT=/litra
+```
 
-4. **Reload Apache**:
-   ```bash
-   sudo systemctl reload apache2
-   ```
+Then add the content from `apache-config-subpath.conf` inside your existing
+`<VirtualHost>` block and reload Apache.
 
 ## Environment Variables
 
-Set environment variables for production in the Apache configuration by adding to the WSGI daemon process:
+Set production environment variables in Apache with `SetEnv`, in your process
+manager, or in a local `.env` loaded by `wsgi.py`.
+
+Minimum production configuration:
 
 ```apache
-WSGIDaemonProcess craut \
+WSGIDaemonProcess litra \
     user=www-data \
     group=www-data \
     threads=5 \
-    python-home=/home/samuel/uibk/projects/craut/venv \
+    python-home=/home/samuel/uibk/projects/litra/venv \
     display-name=%{GROUP}
-    
-# Add environment variables:
-SetEnv SECRET_KEY "your-secret-key-here"
-SetEnv DATABASE_URL "postgresql://user:pass@localhost/dbname"
-SetEnv REGISTRATION_TOKEN "your-registration-token"
-SetEnv TRUST_PROXY_HEADERS "1"
-SetEnv SESSION_COOKIE_SECURE "1"
-```
 
-Alternatively, create a `.env` file and load it in `wsgi.py`:
-```python
-from dotenv import load_dotenv
-load_dotenv(APPLICATION_DIR / '.env')
+SetEnv APP_ENV "production"
+SetEnv REQUIRE_POSTGRES "1"
+SetEnv SECRET_KEY "replace-with-a-long-random-secret"
+SetEnv DATABASE_URL "postgresql://litrauser:your-password@localhost/litra"
+SetEnv REGISTRATION_TOKEN "replace-with-random-registration-token"
+SetEnv SESSION_COOKIE_SECURE "1"
+SetEnv TRUST_PROXY_HEADERS "1"
 ```
 
 ## Database Setup
 
-### Using PostgreSQL (Recommended for Production)
+Production deployments should use PostgreSQL.
+
 ```bash
 sudo apt install postgresql
 sudo -u postgres psql
 ```
 
 In PostgreSQL:
+
 ```sql
-CREATE DATABASE craut;
-CREATE USER crautuser WITH PASSWORD 'your-password';
-GRANT ALL PRIVILEGES ON DATABASE craut TO crautuser;
+CREATE DATABASE litra;
+CREATE USER litrauser WITH PASSWORD 'your-password';
+GRANT ALL PRIVILEGES ON DATABASE litra TO litrauser;
 \q
 ```
 
-Set `DATABASE_URL` environment variable:
+Set:
+
+```text
+DATABASE_URL=postgresql://litrauser:your-password@localhost/litra
 ```
-DATABASE_URL=postgresql://crautuser:your-password@localhost/craut
-```
 
-### Using SQLite (Development)
-SQLite will be used by default if no `DATABASE_URL` is set.
-Ensure the `data/` directory is writable by www-data.
+SQLite is suitable for local development only. If no `DATABASE_URL` is set,
+LITRA writes to `data/app.sqlite3`.
 
-## Troubleshooting
+## File Permissions
 
-### Check Apache Error Log
+Apache must be able to read the app and write runtime data:
+
 ```bash
-sudo tail -f /var/log/apache2/craut-error.log
-```
-
-### Test Apache Configuration
-```bash
-sudo apache2ctl configtest
-```
-
-### Permission Issues
-If you get permission errors:
-```bash
-# Make sure www-data can read the app
-sudo chmod -R 755 /home/samuel/uibk/projects/craut
-
-# Make sure www-data can write to data and uploads
-sudo chown -R www-data:www-data /home/samuel/uibk/projects/craut/uploads
-sudo chown -R www-data:www-data /home/samuel/uibk/projects/craut/data
-sudo chmod -R 775 /home/samuel/uibk/projects/craut/uploads
-sudo chmod -R 775 /home/samuel/uibk/projects/craut/data
-```
-
-### Module Not Found Errors
-Ensure the virtual environment path is correct in the Apache config:
-```apache
-WSGIDaemonProcess craut python-home=/path/to/your/venv
-```
-
-### Application Not Reloading
-After making changes to Python code:
-```bash
-# Touch the WSGI file to reload the app
-touch /home/samuel/uibk/projects/craut/wsgi.py
-
-# Or restart Apache
-sudo systemctl restart apache2
+sudo chown -R www-data:www-data /home/samuel/uibk/projects/litra/uploads
+sudo chown -R www-data:www-data /home/samuel/uibk/projects/litra/data
+sudo chmod -R 755 /home/samuel/uibk/projects/litra
+sudo chmod -R 775 /home/samuel/uibk/projects/litra/uploads
+sudo chmod -R 775 /home/samuel/uibk/projects/litra/data
 ```
 
 ## Security Checklist
 
-- [ ] Set a strong `SECRET_KEY` environment variable
-- [ ] Use HTTPS (SSL/TLS certificates)
-- [ ] Set `SESSION_COOKIE_SECURE=1` when using HTTPS
-- [ ] Use PostgreSQL instead of SQLite for production
-- [ ] Restrict database permissions
-- [ ] Keep all dependencies updated
-- [ ] Set `REGISTRATION_TOKEN` if you want to control registrations
-- [ ] Configure firewall to allow only necessary ports
-- [ ] Regular backups of database and uploads
+- [ ] Set a strong `SECRET_KEY`.
+- [ ] Use HTTPS.
+- [ ] Set `SESSION_COOKIE_SECURE=1` when using HTTPS.
+- [ ] Use PostgreSQL with restricted database permissions.
+- [ ] Set `REGISTRATION_TOKEN` if registrations should be invite-only.
+- [ ] Configure upload limits and rate limits.
+- [ ] Set `TRUST_PROXY_HEADERS=1` only behind a trusted reverse proxy.
+- [ ] Back up the database and uploads directory.
+- [ ] Keep dependencies and the base OS updated.
 
-## Updating the Application
+## Troubleshooting
+
+Check Apache logs:
 
 ```bash
-cd /home/samuel/uibk/projects/craut
-git pull  # or however you update your code
-source venv/bin/activate
-pip install -r requirements.txt
-touch wsgi.py  # Reload the app
+sudo tail -f /var/log/apache2/litra-error.log
 ```
 
-## Multiple Applications on Same Server
+Test Apache configuration:
 
-Apache can run multiple WSGI applications simultaneously:
+```bash
+sudo apache2ctl configtest
+```
 
-1. Each application gets its own `WSGIDaemonProcess` with a unique name
-2. Use different process groups to isolate applications
-3. Applications can share the same Apache instance but run in separate processes
+Reload the app after code changes:
 
-Example:
+```bash
+touch /home/samuel/uibk/projects/litra/wsgi.py
+```
+
+## Updating The Application
+
+```bash
+cd /home/samuel/uibk/projects/litra
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+touch wsgi.py
+```
+
+## Multiple Applications On One Server
+
+Use a unique `WSGIDaemonProcess`, process group, URL path, and log file for
+each application.
+
 ```apache
-# App 1
 WSGIDaemonProcess app1 python-home=/path/to/app1/venv
 WSGIScriptAlias /app1 /path/to/app1/wsgi.py
 
-# App 2 (CRAUT)
-WSGIDaemonProcess craut python-home=/path/to/craut/venv
-WSGIScriptAlias /craut /path/to/craut/wsgi.py
+WSGIDaemonProcess litra python-home=/home/samuel/uibk/projects/litra/venv
+WSGIScriptAlias /litra /home/samuel/uibk/projects/litra/wsgi.py
 ```
-
-Each application runs independently and won't interfere with others.
