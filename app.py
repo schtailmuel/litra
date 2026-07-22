@@ -54,7 +54,7 @@ USE_POSTGRES = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg://"
 DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "20"))
 DB_POOL_MIN_SIZE = int(os.environ.get("DB_POOL_MIN_SIZE", "1"))
 REGISTRATION_TOKEN = os.environ.get("REGISTRATION_TOKEN", "").strip()
-STATIC_VERSION = os.environ.get("STATIC_VERSION", "20260722-16")
+STATIC_VERSION = os.environ.get("STATIC_VERSION", "20260722-17")
 APP_ENV = os.environ.get("APP_ENV", os.environ.get("FLASK_ENV", "development")).strip().lower()
 REQUIRE_POSTGRES = os.environ.get("REQUIRE_POSTGRES", "0").lower() in {"1", "true", "yes"}
 PRODUCTION_MODE = APP_ENV in {"prod", "production"} or REQUIRE_POSTGRES
@@ -7972,30 +7972,7 @@ def api_flag_source(token, segment_id):
         return jsonify({"status": "error", "message": "Flag note is required."}), 400
 
     with db() as conn:
-        link = conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
-        if not link:
-            abort(404)
-
-        segment = conn.execute(
-            "SELECT * FROM segments WHERE id = ? AND project_id = ?",
-            (segment_id, link["project_id"]),
-        ).fetchone()
-        if not segment:
-            abort(404)
-
-        claim = conn.execute(
-            """
-            SELECT *
-            FROM translation_claims
-            WHERE segment_id = ?
-              AND share_link_id = ?
-              AND lower(target_language) = lower(?)
-            """,
-            (segment_id, link["id"], link["target_language"]),
-        ).fetchone()
-        if not claim:
-            abort(403)
-
+        link, _segment, _claim = require_link_segment_claim(conn, token, segment_id)
         translator = link_translator_name(link)
         stamp = now_iso()
         conn.execute(
@@ -8013,12 +7990,55 @@ def api_flag_source(token, segment_id):
             """,
             (segment_id, link["id"], link["target_language"], translator, note, stamp),
         )
+        add_translation_comment(
+            conn,
+            segment_id,
+            link["target_language"],
+            "translator",
+            f"Source flagged: {note}",
+            translator,
+        )
         conn.commit()
         flags = grouped_source_flags(conn, [segment_id], [link["target_language"]]).get(
             segment_id, []
         )
+        comments = serialized_comments(
+            conn, segment_id, link["target_language"], translator
+        )
 
-    return jsonify({"status": "flagged", "source_flags": flags})
+    return jsonify({"status": "flagged", "source_flags": flags, "comments": comments})
+
+
+@app.post("/api/t/<token>/segments/<int:segment_id>/source-unflag")
+def api_unflag_source(token, segment_id):
+    with db() as conn:
+        link, _segment, _claim = require_link_segment_claim(conn, token, segment_id)
+        translator = link_translator_name(link)
+        conn.execute(
+            """
+            DELETE FROM source_flags
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment_id, link["target_language"]),
+        )
+        add_translation_comment(
+            conn,
+            segment_id,
+            link["target_language"],
+            "translator",
+            "Source unflagged.",
+            translator,
+        )
+        conn.commit()
+        flags = grouped_source_flags(conn, [segment_id], [link["target_language"]]).get(
+            segment_id, []
+        )
+        comments = serialized_comments(
+            conn, segment_id, link["target_language"], translator
+        )
+
+    return jsonify({"status": "unflagged", "source_flags": flags, "comments": comments})
 
 
 @app.post("/api/t/<token>/segments/<int:segment_id>/draft")

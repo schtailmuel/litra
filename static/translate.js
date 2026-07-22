@@ -52,6 +52,7 @@ const els = {
   nextAfterSaveButton: document.querySelector("#nextAfterSaveButton"),
   skipButton: document.querySelector("#skipButton"),
   flagSourceButton: document.querySelector("#flagSourceButton"),
+  unflagSourceButton: document.querySelector("#unflagSourceButton"),
   sourceFlagPanel: document.querySelector("#sourceFlagPanel"),
   sourceFlagNote: document.querySelector("#sourceFlagNote"),
   submitSourceFlagButton: document.querySelector("#submitSourceFlagButton"),
@@ -132,6 +133,7 @@ function setEditorEnabled(enabled) {
   els.nextAfterSaveButton.disabled = !enabled;
   els.skipButton.disabled = !enabled;
   els.flagSourceButton.disabled = !enabled;
+  els.unflagSourceButton.disabled = !enabled;
   els.submitSourceFlagButton.disabled = !enabled;
   els.downloadSourceButton.disabled = !enabled;
   els.downloadTranslationButton.disabled = !enabled;
@@ -519,6 +521,12 @@ function segmentComments(segment) {
   return comments;
 }
 
+function updateSourceFlagControls(segment = state.currentSegment) {
+  const hasActiveFlags = Boolean(segment?.source_flags?.length);
+  els.unflagSourceButton.classList.toggle("hidden", !hasActiveFlags);
+  els.flagSourceButton.textContent = hasActiveFlags ? "Add Source Flag" : "Flag Source";
+}
+
 function clearEditor(title, message) {
   clearTimeout(state.draftTimer);
   state.currentSegment = null;
@@ -541,6 +549,7 @@ function clearEditor(title, message) {
   renderComments([], "Select a text to see comments.");
   els.sourceFlagNote.value = "";
   els.sourceFlagPanel.classList.add("hidden");
+  updateSourceFlagControls(null);
   els.conflictPanel.classList.add("hidden");
   setEditorEnabled(false);
 }
@@ -563,6 +572,7 @@ function renderSegment(segment) {
   renderComments(segmentComments(segment));
   els.sourceFlagNote.value = "";
   els.sourceFlagPanel.classList.add("hidden");
+  updateSourceFlagControls(segment);
   state.draftSnapshot = translationSnapshot();
   els.conflictPanel.classList.add("hidden");
   setEditorEnabled(true);
@@ -781,9 +791,37 @@ async function submitSourceFlag() {
   }
   const data = await response.json();
   segment.source_flags = data.source_flags || [];
+  segment.comments = data.comments || segment.comments || [];
   els.sourceFlagNote.value = "";
   els.sourceFlagPanel.classList.add("hidden");
+  renderComments(segmentComments(segment));
+  updateSourceFlagControls(segment);
   setSaveState("Source flagged", "saved");
+}
+
+async function unflagSource() {
+  const segment = state.currentSegment;
+  if (!segment) {
+    return;
+  }
+  if (!window.confirm("Remove the active source flag for this text?")) {
+    return;
+  }
+
+  setSaveState("Unflagging source");
+  const response = await fetch(apiUrl(`/segments/${segment.id}/source-unflag`), {
+    method: "POST",
+  });
+  if (!response.ok) {
+    setSaveState("Unflag failed", "conflict");
+    return;
+  }
+  const data = await response.json();
+  segment.source_flags = data.source_flags || [];
+  segment.comments = data.comments || segment.comments || [];
+  renderComments(segmentComments(segment));
+  updateSourceFlagControls(segment);
+  setSaveState("Source unflagged", "saved");
 }
 
 async function submitComment() {
@@ -869,6 +907,7 @@ els.commentList.addEventListener("click", (event) => {
 els.flagSourceButton.addEventListener("click", () => {
   els.sourceFlagPanel.classList.toggle("hidden");
 });
+els.unflagSourceButton.addEventListener("click", unflagSource);
 els.submitSourceFlagButton.addEventListener("click", submitSourceFlag);
 els.cancelSourceFlagButton.addEventListener("click", () => {
   els.sourceFlagNote.value = "";
