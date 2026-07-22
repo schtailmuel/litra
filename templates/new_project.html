@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block main_class %}page page-wide{% endblock %}
 {% block content %}
+  {% set form_state = form_state|default({}) %}
   <div class="page-head">
     <div>
       <h1>New Project</h1>
@@ -23,19 +24,22 @@
         <label>
           Import format
           <select id="importFormatSelect" name="import_format_id">
-            <option value="">Auto-detect / manual mapping</option>
+            <option value="" {% if not form_state.get("import_format_id") %}selected{% endif %}>Auto-detect / manual mapping</option>
             {% for item in import_formats %}
-              <option value="{{ item.id }}">{{ item.name }}</option>
+              <option value="{{ item.id }}" {% if form_state.get("import_format_id")|string == item.id|string %}selected{% endif %}>{{ item.name }}</option>
             {% endfor %}
           </select>
         </label>
         <label>
           Project name
-          <input name="name" autocomplete="off" required>
+          <input name="name" value="{{ form_state.get('name', '') }}" autocomplete="off" required>
         </label>
         <label>
           JSON or JSONL file
           <input id="jsonlInput" name="jsonl" type="file" accept=".json,.jsonl,application/json,application/x-ndjson,application/jsonl,text/plain" required>
+          {% if form_state.get("_submitted") %}
+            <span class="field-note">Choose the file again; the mapping below has been kept.</span>
+          {% endif %}
         </label>
       </fieldset>
 
@@ -54,13 +58,13 @@
             <label>
               File type
               <select id="fileType" name="file_type">
-                <option value="jsonl">JSONL rows</option>
-                <option value="json">JSON document</option>
+                <option value="jsonl" {% if form_state.get("file_type", "jsonl") == "jsonl" %}selected{% endif %}>JSONL rows</option>
+                <option value="json" {% if form_state.get("file_type") == "json" %}selected{% endif %}>JSON document</option>
               </select>
             </label>
             <label>
               Rows path
-              <input id="rowsPath" name="rows_path" placeholder="translations">
+              <input id="rowsPath" name="rows_path" value="{{ form_state.get('rows_path', '') }}" placeholder="translations">
             </label>
           </div>
         </fieldset>
@@ -71,11 +75,14 @@
             <label>
               Source text path
               <select id="sourceTextKey" name="source_text_key">
-                <option value="">Choose source text path</option>
+                <option value="" {% if not form_state.get("source_text_key") %}selected{% endif %}>Choose source text path</option>
+                {% if form_state.get("source_text_key") %}
+                  <option value="{{ form_state.get('source_text_key') }}" selected>{{ form_state.get("source_text_key") }}</option>
+                {% endif %}
               </select>
             </label>
             <label class="checkbox-label source-edit-toggle">
-              <input id="sourceTextIsList" name="source_text_is_list" type="checkbox" value="1">
+              <input id="sourceTextIsList" name="source_text_is_list" type="checkbox" value="1" {% if form_state.get("source_text_is_list") == "1" %}checked{% endif %}>
               Source text is a list shown line by line
             </label>
 
@@ -83,42 +90,51 @@
               Instruction path
               <span class="key-field-pair">
                 <select id="instructionKey" name="instruction_key">
-                  <option value="__none__">No instruction path</option>
-                  <option value="instructions">instructions</option>
-                  <option value="instruction">instruction</option>
-                  <option value="source_instruction">source_instruction</option>
-                  <option value="source_instructions">source_instructions</option>
+                  <option value="__none__" {% if form_state.get("instruction_key", "__none__") == "__none__" %}selected{% endif %}>No instruction path</option>
+                  <option value="instructions" {% if form_state.get("instruction_key") == "instructions" %}selected{% endif %}>instructions</option>
+                  <option value="instruction" {% if form_state.get("instruction_key") == "instruction" %}selected{% endif %}>instruction</option>
+                  <option value="source_instruction" {% if form_state.get("instruction_key") == "source_instruction" %}selected{% endif %}>source_instruction</option>
+                  <option value="source_instructions" {% if form_state.get("instruction_key") == "source_instructions" %}selected{% endif %}>source_instructions</option>
+                  {% if form_state.get("instruction_key") and form_state.get("instruction_key") not in ["__none__", "instructions", "instruction", "source_instruction", "source_instructions"] %}
+                    <option value="{{ form_state.get('instruction_key') }}" selected>{{ form_state.get("instruction_key") }}</option>
+                  {% endif %}
                 </select>
-                <input id="instructionKeyCustom" name="instruction_key_custom" placeholder="type exact key">
+                <input id="instructionKeyCustom" name="instruction_key_custom" value="{{ form_state.get('instruction_key_custom', '') }}" placeholder="type exact key">
               </span>
             </label>
 
             <label>
               Source language path
               <select id="sourceLanguageKey" name="source_language_key">
-                <option value="">Choose source language path</option>
+                <option value="" {% if not form_state.get("source_language_key") %}selected{% endif %}>Choose source language path</option>
+                {% if form_state.get("source_language_key") %}
+                  <option value="{{ form_state.get('source_language_key') }}" selected>{{ form_state.get("source_language_key") }}</option>
+                {% endif %}
               </select>
             </label>
 
             <label class="checkbox-label">
-              <input id="sourceLanguageManual" name="source_language_manual" type="checkbox" value="1">
+              <input id="sourceLanguageManual" name="source_language_manual" type="checkbox" value="1" {% if form_state.get("source_language_manual") == "1" %}checked{% endif %}>
               Set manually
             </label>
 
             <label>
               Manual source language
-              <input id="manualSourceLanguage" name="manual_source_language" placeholder="e.g. German" disabled>
+              <input id="manualSourceLanguage" name="manual_source_language" value="{{ form_state.get('manual_source_language', '') }}" placeholder="e.g. German" disabled>
             </label>
 
             <label>
               ID path
               <select id="identifierKey" name="identifier_key">
-                <option value="__auto__">Generate IDs from row order</option>
+                <option value="__auto__" {% if form_state.get("identifier_key", "__auto__") == "__auto__" %}selected{% endif %}>Generate IDs from row order</option>
+                {% if form_state.get("identifier_key") and form_state.get("identifier_key") != "__auto__" %}
+                  <option value="{{ form_state.get('identifier_key') }}" selected>{{ form_state.get("identifier_key") }}</option>
+                {% endif %}
               </select>
             </label>
 
             <label class="checkbox-label source-edit-toggle">
-              <input name="source_editable" type="checkbox" value="1" checked>
+              <input name="source_editable" type="checkbox" value="1" {% if form_state.get("source_editable", "1") == "1" %}checked{% endif %}>
               Source text can be edited after import
             </label>
           </div>
@@ -127,7 +143,7 @@
         <fieldset class="import-fieldset seed-translation-panel" id="seedTranslationFields" data-active="false">
           <legend>Existing Translation</legend>
           <label class="checkbox-label source-edit-toggle">
-            <input id="hasSeedTranslation" name="has_seed_translation" type="checkbox" value="1">
+            <input id="hasSeedTranslation" name="has_seed_translation" type="checkbox" value="1" {% if form_state.get("has_seed_translation") == "1" %}checked{% endif %}>
             File already contains translations for one language
           </label>
 
@@ -136,49 +152,58 @@
               Translation text path
               <span class="key-field-pair">
                 <select id="targetTextKey" name="target_text_key">
-                  <option value="">No translation text path</option>
-                  <option value="target_text">target_text</option>
-                  <option value="tgt_text">tgt_text</option>
-                  <option value="translation">translation</option>
-                  <option value="translated_text">translated_text</option>
+                  <option value="" {% if not form_state.get("target_text_key") %}selected{% endif %}>No translation text path</option>
+                  <option value="target_text" {% if form_state.get("target_text_key") == "target_text" %}selected{% endif %}>target_text</option>
+                  <option value="tgt_text" {% if form_state.get("target_text_key") == "tgt_text" %}selected{% endif %}>tgt_text</option>
+                  <option value="translation" {% if form_state.get("target_text_key") == "translation" %}selected{% endif %}>translation</option>
+                  <option value="translated_text" {% if form_state.get("target_text_key") == "translated_text" %}selected{% endif %}>translated_text</option>
+                  {% if form_state.get("target_text_key") and form_state.get("target_text_key") not in ["target_text", "tgt_text", "translation", "translated_text"] %}
+                    <option value="{{ form_state.get('target_text_key') }}" selected>{{ form_state.get("target_text_key") }}</option>
+                  {% endif %}
                 </select>
-                <input id="targetTextKeyCustom" name="target_text_key_custom" placeholder="type exact key">
+                <input id="targetTextKeyCustom" name="target_text_key_custom" value="{{ form_state.get('target_text_key_custom', '') }}" placeholder="type exact key">
               </span>
             </label>
             <label class="checkbox-label source-edit-toggle">
-              <input id="targetTextIsList" name="target_text_is_list" type="checkbox" value="1">
+              <input id="targetTextIsList" name="target_text_is_list" type="checkbox" value="1" {% if form_state.get("target_text_is_list") == "1" %}checked{% endif %}>
               Translation text is a list
             </label>
             <label>
               Translated instruction path
               <span class="key-field-pair">
                 <select id="translatedInstructionKey" name="translated_instruction_key">
-                  <option value="__none__">No translated instruction path</option>
-                  <option value="translated_instruction">translated_instruction</option>
-                  <option value="translated_instructions">translated_instructions</option>
-                  <option value="target_instruction">target_instruction</option>
-                  <option value="target_instructions">target_instructions</option>
-                  <option value="tgt_instruction">tgt_instruction</option>
-                  <option value="tgt_instructions">tgt_instructions</option>
+                  <option value="__none__" {% if form_state.get("translated_instruction_key", "__none__") == "__none__" %}selected{% endif %}>No translated instruction path</option>
+                  <option value="translated_instruction" {% if form_state.get("translated_instruction_key") == "translated_instruction" %}selected{% endif %}>translated_instruction</option>
+                  <option value="translated_instructions" {% if form_state.get("translated_instruction_key") == "translated_instructions" %}selected{% endif %}>translated_instructions</option>
+                  <option value="target_instruction" {% if form_state.get("translated_instruction_key") == "target_instruction" %}selected{% endif %}>target_instruction</option>
+                  <option value="target_instructions" {% if form_state.get("translated_instruction_key") == "target_instructions" %}selected{% endif %}>target_instructions</option>
+                  <option value="tgt_instruction" {% if form_state.get("translated_instruction_key") == "tgt_instruction" %}selected{% endif %}>tgt_instruction</option>
+                  <option value="tgt_instructions" {% if form_state.get("translated_instruction_key") == "tgt_instructions" %}selected{% endif %}>tgt_instructions</option>
+                  {% if form_state.get("translated_instruction_key") and form_state.get("translated_instruction_key") not in ["__none__", "translated_instruction", "translated_instructions", "target_instruction", "target_instructions", "tgt_instruction", "tgt_instructions"] %}
+                    <option value="{{ form_state.get('translated_instruction_key') }}" selected>{{ form_state.get("translated_instruction_key") }}</option>
+                  {% endif %}
                 </select>
-                <input id="translatedInstructionKeyCustom" name="translated_instruction_key_custom" placeholder="type exact key">
+                <input id="translatedInstructionKeyCustom" name="translated_instruction_key_custom" value="{{ form_state.get('translated_instruction_key_custom', '') }}" placeholder="type exact key">
               </span>
             </label>
             <label>
               Translation language path
               <select id="targetLanguageKey" name="target_language_key">
-                <option value="">No translation language path</option>
+                <option value="" {% if not form_state.get("target_language_key") %}selected{% endif %}>No translation language path</option>
+                {% if form_state.get("target_language_key") %}
+                  <option value="{{ form_state.get('target_language_key') }}" selected>{{ form_state.get("target_language_key") }}</option>
+                {% endif %}
               </select>
             </label>
             <label>
               Translation language name
-              <input id="targetLanguageName" name="target_language_name" placeholder="e.g. Ladin">
+              <input id="targetLanguageName" name="target_language_name" value="{{ form_state.get('target_language_name', '') }}" placeholder="e.g. Ladin">
             </label>
             <label>
               Import status
-              <select name="seed_translation_status">
-                <option value="submitted">Submitted: ready for review</option>
-                <option value="draft">Post-editing draft: translators can claim</option>
+              <select id="seedTranslationStatus" name="seed_translation_status">
+                <option value="submitted" {% if form_state.get("seed_translation_status", "submitted") == "submitted" %}selected{% endif %}>Submitted: ready for review</option>
+                <option value="draft" {% if form_state.get("seed_translation_status") == "draft" %}selected{% endif %}>Post-editing draft: translators can claim</option>
               </select>
             </label>
           </div>
@@ -226,6 +251,7 @@
 
   <script>
     window.importFormats = {{ import_formats|tojson }};
+    window.projectImportFormState = {{ form_state|tojson }};
   </script>
   <script src="{{ url_for('static', filename='new_project.js') }}?v={{ STATIC_VERSION }}"></script>
 {% endblock %}

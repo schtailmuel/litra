@@ -19,10 +19,21 @@ const targetLanguageKey = document.querySelector("#targetLanguageKey");
 const translatedInstructionKey = document.querySelector("#translatedInstructionKey");
 const translatedInstructionKeyCustom = document.querySelector("#translatedInstructionKeyCustom");
 const targetLanguageName = document.querySelector("#targetLanguageName");
+const seedTranslationStatus = document.querySelector("#seedTranslationStatus");
 const seedTranslationFields = document.querySelector("#seedTranslationFields");
 const schemaSummary = document.querySelector("#schemaSummary");
 const sampleRow = document.querySelector("#sampleRow");
 const importFormats = window.importFormats || [];
+const submittedFormState = window.projectImportFormState || {};
+const hasSubmittedFormState = Boolean(
+  submittedFormState._submitted ||
+    submittedFormState.name ||
+    submittedFormState.source_text_key ||
+    submittedFormState.manual_source_language ||
+    submittedFormState.target_text_key ||
+    submittedFormState.target_text_key_custom
+);
+let restoreSubmittedMapping = hasSubmittedFormState;
 
 const sourceTextCandidates = ["source_text", "src_text", "text", "sentences", "content", "body", "prompt"];
 const instructionCandidates = [
@@ -260,6 +271,83 @@ function setSeedTranslation(enabled) {
   targetLanguageName.required = enabled && !targetLanguageKey.value;
 }
 
+function checkboxState(value) {
+  return value === true || String(value || "") === "1";
+}
+
+function currentFormState() {
+  return {
+    import_format_id: importFormatSelect.value,
+    file_type: fileType.value,
+    rows_path: rowsPath.value,
+    source_text_key: sourceTextKey.value,
+    source_text_is_list: sourceTextIsList.checked ? "1" : "",
+    instruction_key: instructionKey.value,
+    instruction_key_custom: instructionKeyCustom.value,
+    source_language_key: sourceLanguageKey.value,
+    source_language_manual: sourceLanguageManual.checked ? "1" : "",
+    manual_source_language: manualSourceLanguage.value,
+    identifier_key: identifierKey.value,
+    has_seed_translation: hasSeedTranslation.checked ? "1" : "",
+    target_language_key: targetLanguageKey.value,
+    target_text_key: targetTextKey.value,
+    target_text_key_custom: targetTextKeyCustom.value,
+    target_text_is_list: targetTextIsList.checked ? "1" : "",
+    translated_instruction_key: translatedInstructionKey.value,
+    translated_instruction_key_custom: translatedInstructionKeyCustom.value,
+    target_language_name: targetLanguageName.value,
+    seed_translation_status: seedTranslationStatus?.value || "submitted",
+  };
+}
+
+function applyFormState(state, keys = []) {
+  if (!state) {
+    return;
+  }
+  if ("import_format_id" in state) {
+    importFormatSelect.value = state.import_format_id || "";
+  }
+  fileType.value = state.file_type || "jsonl";
+  rowsPath.value = state.rows_path || "";
+  sourceTextIsList.checked = checkboxState(state.source_text_is_list);
+  targetTextIsList.checked = checkboxState(state.target_text_is_list);
+  sourceLanguageManual.checked = checkboxState(state.source_language_manual);
+  manualSourceLanguage.value = state.manual_source_language || "";
+  hasSeedTranslation.checked = checkboxState(state.has_seed_translation);
+  targetLanguageName.value = state.target_language_name || "";
+
+  fillSelect(sourceTextKey, keys, state.source_text_key || "", [
+    { value: "", label: "Choose source text path" },
+  ]);
+  fillSelect(instructionKey, keys, state.instruction_key || "__none__", [
+    { value: "__none__", label: "No instruction path" },
+  ]);
+  fillSelect(sourceLanguageKey, keys, state.source_language_key || "", [
+    { value: "", label: "Choose source language path" },
+  ]);
+  fillSelect(identifierKey, keys, state.identifier_key || "__auto__", [
+    { value: "__auto__", label: "Generate IDs from row order" },
+  ]);
+  fillSelect(targetTextKey, keys, state.target_text_key || "", [
+    { value: "", label: "No translation text path" },
+  ]);
+  fillSelect(targetLanguageKey, keys, state.target_language_key || "", [
+    { value: "", label: "No translation language path" },
+  ]);
+  fillSelect(translatedInstructionKey, keys, state.translated_instruction_key || "__none__", [
+    { value: "__none__", label: "No translated instruction path" },
+  ]);
+
+  instructionKeyCustom.value = state.instruction_key_custom || "";
+  targetTextKeyCustom.value = state.target_text_key_custom || "";
+  translatedInstructionKeyCustom.value = state.translated_instruction_key_custom || "";
+  if (seedTranslationStatus) {
+    seedTranslationStatus.value = state.seed_translation_status || "submitted";
+  }
+  setManualLanguage(sourceLanguageManual.checked);
+  setSeedTranslation(hasSeedTranslation.checked);
+}
+
 function selectedFormat() {
   const id = Number(importFormatSelect.value || 0);
   return importFormats.find((item) => Number(item.id) === id);
@@ -349,6 +437,7 @@ async function detectSchema(file) {
 
   const stats = keyStats(rows);
   const keys = stats.map((item) => item.key);
+  const mappingBeforeDetection = currentFormState();
   const detectedSourceText = pickKey(keys, sourceTextCandidates, keys[0] || "");
   const detectedInstruction = pickKey(keys, instructionCandidates, "__none__");
   const detectedSourceLanguage = pickKey(keys, sourceLanguageCandidates);
@@ -361,7 +450,9 @@ async function detectSchema(file) {
   );
   const detectedTargetLanguage = pickKey(keys, sourceLanguageCandidates);
 
-  if (format) {
+  if (restoreSubmittedMapping) {
+    applyFormState(mappingBeforeDetection, keys);
+  } else if (format) {
     applyFormat(format, keys);
   } else {
     fillSelect(sourceTextKey, keys, detectedSourceText);
@@ -410,6 +501,7 @@ sourceLanguageManual.addEventListener("change", () => {
 });
 
 importFormatSelect.addEventListener("change", () => {
+  restoreSubmittedMapping = false;
   applyFormat(selectedFormat());
   if (jsonlInput.files[0]) {
     detectSchema(jsonlInput.files[0]).catch((error) => {
@@ -480,6 +572,10 @@ translatedInstructionKeyCustom.addEventListener("input", () => {
     setSeedTranslation(true);
   }
 });
+
+if (hasSubmittedFormState) {
+  applyFormState(submittedFormState);
+}
 
 jsonlInput.addEventListener("change", () => {
   detectSchema(jsonlInput.files[0]).catch((error) => {

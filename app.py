@@ -54,7 +54,7 @@ USE_POSTGRES = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg://"
 DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "20"))
 DB_POOL_MIN_SIZE = int(os.environ.get("DB_POOL_MIN_SIZE", "1"))
 REGISTRATION_TOKEN = os.environ.get("REGISTRATION_TOKEN", "").strip()
-STATIC_VERSION = os.environ.get("STATIC_VERSION", "20260722-14")
+STATIC_VERSION = os.environ.get("STATIC_VERSION", "20260722-15")
 APP_ENV = os.environ.get("APP_ENV", os.environ.get("FLASK_ENV", "development")).strip().lower()
 REQUIRE_POSTGRES = os.environ.get("REQUIRE_POSTGRES", "0").lower() in {"1", "true", "yes"}
 PRODUCTION_MODE = APP_ENV in {"prod", "production"} or REQUIRE_POSTGRES
@@ -1306,6 +1306,58 @@ def parse_mapping_from_config(config):
         "target_text_is_list": bool(config["target_text_is_list"]),
         "translated_instruction_key": config["translated_instruction_path"],
     }
+
+
+NEW_PROJECT_FORM_FIELDS = [
+    "import_format_id",
+    "name",
+    "file_type",
+    "rows_path",
+    "source_text_key",
+    "instruction_key",
+    "instruction_key_custom",
+    "source_language_key",
+    "manual_source_language",
+    "identifier_key",
+    "target_language_key",
+    "target_text_key",
+    "target_text_key_custom",
+    "translated_instruction_key",
+    "translated_instruction_key_custom",
+    "target_language_name",
+    "seed_translation_status",
+]
+
+NEW_PROJECT_CHECKBOX_FIELDS = [
+    "source_text_is_list",
+    "source_language_manual",
+    "source_editable",
+    "has_seed_translation",
+    "target_text_is_list",
+]
+
+
+def new_project_form_state(form=None):
+    if not form:
+        return {
+            "_submitted": "",
+            "file_type": "jsonl",
+            "identifier_key": "__auto__",
+            "instruction_key": "__none__",
+            "source_editable": "1",
+            "seed_translation_status": "submitted",
+            "translated_instruction_key": "__none__",
+        }
+    state = {field: form.get(field, "") for field in NEW_PROJECT_FORM_FIELDS}
+    state["_submitted"] = "1"
+    for field in NEW_PROJECT_CHECKBOX_FIELDS:
+        state[field] = "1" if form.get(field) == "1" else ""
+    state["file_type"] = state["file_type"] or "jsonl"
+    state["identifier_key"] = state["identifier_key"] or "__auto__"
+    state["instruction_key"] = state["instruction_key"] or "__none__"
+    state["seed_translation_status"] = state["seed_translation_status"] or "submitted"
+    state["translated_instruction_key"] = state["translated_instruction_key"] or "__none__"
+    return state
 
 
 def project_import_config(project, owner_id):
@@ -3545,8 +3597,17 @@ def new_project():
     if not is_db_row(user):
         return user
     import_formats = user_import_formats(user["id"])
+    form_state = new_project_form_state()
+
+    def render_new_project_form():
+        return render_template(
+            "new_project.html",
+            import_formats=import_formats,
+            form_state=form_state,
+        )
 
     if request.method == "POST":
+        form_state = new_project_form_state(request.form)
         name = request.form.get("name", "").strip()
         upload = request.files.get("jsonl")
         import_format_id = int_or_none(request.form.get("import_format_id"))
@@ -3594,19 +3655,19 @@ def new_project():
 
         if not name or not upload or not upload.filename:
             flash("Project name and JSON or JSONL file are required.")
-            return render_template("new_project.html", import_formats=import_formats)
+            return render_new_project_form()
 
         if source_language_manual and not manual_source_language:
             flash("Enter a source language or choose a source-language key.")
-            return render_template("new_project.html", import_formats=import_formats)
+            return render_new_project_form()
 
         if mapping["has_seed_translation"]:
             if not mapping["target_language_name"] and not mapping["target_language_key"]:
                 flash("Enter the language name for the imported translations or choose a language key.")
-                return render_template("new_project.html", import_formats=import_formats)
+                return render_new_project_form()
             if not mapping["target_text_key"]:
                 flash("Choose the key that contains the imported translation text.")
-                return render_template("new_project.html", import_formats=import_formats)
+                return render_new_project_form()
             mapping["seed_translation_status"] = import_translation_mode(
                 mapping["seed_translation_status"]
             )
@@ -3615,7 +3676,7 @@ def new_project():
             source_language, rows = parse_jsonl(upload, mapping)
         except ValueError as exc:
             flash(str(exc))
-            return render_template("new_project.html", import_formats=import_formats)
+            return render_new_project_form()
 
         upload.stream.seek(0)
         filename = secure_filename(upload.filename)
@@ -3747,7 +3808,7 @@ def new_project():
         flash("Project imported.")
         return redirect(url_for("project_detail", project_id=project_id))
 
-    return render_template("new_project.html", import_formats=import_formats)
+    return render_new_project_form()
 
 
 @app.route("/projects/<int:project_id>", methods=["GET", "POST"])
