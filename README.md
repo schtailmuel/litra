@@ -199,8 +199,7 @@ Public repository: [schtailmuel/litra](https://github.com/schtailmuel/litra)
 
 ## License
 
-LITRA application code is licensed under Apache-2.0. See [LICENSE](LICENSE).
+LITRA is licensed under Apache-2.0. See [LICENSE](LICENSE).
 
-Documentation, demo data, dataset schemas, and released dataset content are
-licensed under CC BY-SA 4.0 unless a release artifact, dataset card, or
-file-level notice says otherwise. See [DATA_LICENSE.md](DATA_LICENSE.md).
+The repository does not publish a dataset. Demo files are included only as
+examples for local development and import-format testing.

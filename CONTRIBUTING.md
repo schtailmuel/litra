@@ -38,10 +38,9 @@ reviewer editing, batch status updates, and JSONL/TXT/DOCX exports.
   those areas.
 - Do not commit `.env`, database files, uploads, generated exports, or personal
   production paths.
-- Document any dataset release assumptions in the dataset card or release notes.
+- Document any import/export format changes in the README or release notes.
 
 ## Licensing
 
 Code contributions are accepted under Apache-2.0.
-Documentation and data contributions are accepted under CC BY-SA 4.0 unless a
-file-level or release-level notice states otherwise.
+Documentation and example-file contributions are accepted under Apache-2.0.
