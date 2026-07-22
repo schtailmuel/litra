@@ -277,6 +277,7 @@ function translationSnapshot(payload = collectTranslationPayload()) {
 
 function clearFormatView() {
   els.workbench.classList.remove("sentence-list-view", "dual-field-view");
+  els.instructionPanel.classList.remove("has-target-instruction");
   els.sourceText.classList.remove("hidden");
   els.sentenceEditor.classList.add("hidden");
   els.sentenceEditor.innerHTML = "";
@@ -340,9 +341,9 @@ function applyEditorView(segment, preserveTarget = false) {
     return;
   }
   if (view === "dual_field") {
-    els.workbench.classList.add("dual-field-view");
     els.targetTextLabel.textContent = "Text Translation";
     els.targetInstructionPane.classList.remove("hidden");
+    els.instructionPanel.classList.add("has-target-instruction");
   }
 }
 

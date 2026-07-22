@@ -51,7 +51,12 @@
       <section class="editor">
         <details id="instructionPanel" class="source-box instruction-box" open>
           <summary>Instructions</summary>
-          <div id="instructions" class="markdown-body"></div>
+          <div class="instruction-stack">
+            <div id="instructions" class="markdown-body"></div>
+            <label class="instruction-translation hidden" id="targetInstructionPane">
+              <textarea id="targetInstructions" rows="4" aria-label="Translated instructions"></textarea>
+            </label>
+          </div>
         </details>
 
         <div class="editor-toolbar-row">
@@ -88,11 +93,6 @@
             <span class="pane-title" id="targetTextLabel">Translation</span>
             <textarea id="targetText"></textarea>
             <div id="targetPreview" class="markdown-body markdown-preview hidden"></div>
-          </label>
-
-          <label class="source-box translation-label target-instruction-pane hidden" id="targetInstructionPane">
-            <span class="pane-title">Instruction Translation</span>
-            <textarea id="targetInstructions" rows="6"></textarea>
           </label>
         </div>
 

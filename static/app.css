@@ -2106,8 +2106,26 @@ button.danger-text-button:hover {
 
 .instruction-box .markdown-body {
   max-height: 8rem;
-  margin-top: 0.6rem;
   overflow: auto;
+}
+
+.instruction-stack {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.65rem;
+}
+
+.instruction-translation textarea {
+  min-height: 4.5rem;
+  max-height: 10rem;
+  resize: vertical;
+  color: var(--muted);
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.instruction-box.has-target-instruction .markdown-body {
+  max-height: 8rem;
 }
 
 .source-box p,
@@ -2280,14 +2298,6 @@ button.danger-text-button:hover {
   overflow: hidden;
 }
 
-.translation-workbench.dual-field-view {
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 0.95fr);
-}
-
-.translation-workbench.dual-field-view .target-instruction-pane {
-  display: grid;
-}
-
 .sentence-list-view {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -2296,8 +2306,7 @@ button.danger-text-button:hover {
   overflow: auto;
 }
 
-.sentence-list-view .target-pane,
-.sentence-list-view .target-instruction-pane {
+.sentence-list-view .target-pane {
   display: none;
 }
 
@@ -2344,8 +2353,7 @@ button.danger-text-button:hover {
 }
 
 .source-pane,
-.target-pane,
-.target-instruction-pane {
+.target-pane {
   min-height: 0;
 }
 
@@ -2362,8 +2370,7 @@ button.danger-text-button:hover {
 }
 
 .source-pane h2,
-.target-pane .pane-title,
-.target-instruction-pane .pane-title {
+.target-pane .pane-title {
   margin: 0;
   color: var(--text);
   font-size: 0.95rem;
@@ -2400,15 +2407,13 @@ button.danger-text-button:hover {
   line-height: 1.55;
 }
 
-.target-pane,
-.target-instruction-pane {
+.target-pane {
   display: grid;
   grid-template-rows: auto 1fr;
   align-content: stretch;
 }
 
-.target-pane textarea,
-.target-instruction-pane textarea {
+.target-pane textarea {
   min-height: 0;
   height: 100%;
   resize: none;
