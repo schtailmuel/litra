@@ -1,5 +1,7 @@
 # 🪜 LITRA
 
+[![CI](https://github.com/schtailmuel/litra/actions/workflows/ci.yml/badge.svg)](https://github.com/schtailmuel/litra/actions/workflows/ci.yml)
+
 🪜 LITRA is a Flask-based translation workflow tool for multilingual data projects. It helps teams import structured source data, assign translation and post-editing work, review source and target texts, collect comments, and export clean datasets.
 
 The application is designed for dataset work where every source segment can have several target languages, alternative source-language versions, comments, review status, and export metadata.
@@ -140,6 +142,14 @@ flask --app app run --debug
 
 Open the Flask URL, register an account, and create a project.
 
+For development checks:
+
+```bash
+pip install -r requirements-dev.txt
+python -m compileall app.py scripts tests
+python -m pytest
+```
+
 ## Docker
 
 Create an environment file:
@@ -189,4 +199,8 @@ Public repository: [schtailmuel/litra](https://github.com/schtailmuel/litra)
 
 ## License
 
-Add the project license before publishing releases or packages.
+LITRA application code is licensed under Apache-2.0. See [LICENSE](LICENSE).
+
+Documentation, demo data, dataset schemas, and released dataset content are
+licensed under CC BY-SA 4.0 unless a release artifact, dataset card, or
+file-level notice says otherwise. See [DATA_LICENSE.md](DATA_LICENSE.md).
