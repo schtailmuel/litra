@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest an improvement to a LITRA workflow.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is hard or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should LITRA do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Import formats
+        - Translation workspace
+        - Review workflow
+        - Source review
+        - Comments
+        - Exports
+        - Deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: dataset-impact
+    attributes:
+      label: Dataset or release impact
+      description: Note any expected schema, license, provenance, or export changes.

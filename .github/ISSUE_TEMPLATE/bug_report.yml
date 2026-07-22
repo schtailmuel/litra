@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a reproducible problem in LITRA.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest project/import/export workflow that triggers it.
+      placeholder: |
+        1. Create/import ...
+        2. Open ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, Python version, deployment mode, database, and commit/release.
+  - type: textarea
+    id: data-impact
+    attributes:
+      label: Data impact
+      description: Say whether source data, translations, comments, reviews, or exports are affected.
