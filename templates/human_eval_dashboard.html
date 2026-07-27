@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Human Evaluation</h1>
+      <p>{{ user.username }}</p>
+    </div>
+    <a class="button" href="{{ url_for('human_evaluation_new_project') }}">New Evaluation Project</a>
+  </div>
+
+  <section class="form-panel section-gap">
+    <h2>How to run a human evaluation</h2>
+    <ol>
+      <li>Create a new evaluation project and upload one TXT file each for source and reference, plus one TXT per model output.</li>
+      <li>Create evaluator links with credit limits and share the generated URL.</li>
+      <li>Evaluators rank blind translations, mark source/target error spans, and add optional comments.</li>
+      <li>Use the project page for live stats, comments, annotation management, and JSON export downloads.</li>
+    </ol>
+  </section>
+
+  {% if projects %}
+    <div class="project-list">
+      {% for project in projects %}
+        <a class="project-row" href="{{ url_for('human_evaluation_project_detail', eval_project_id=project.id) }}">
+          <span>
+            <strong>{{ project.name }}</strong>
+            <small>{{ project.source_language }} &rarr; {{ project.target_language }}</small>
+          </span>
+          <span>{{ project.item_count }} items</span>
+          <span>{{ project.model_count }} models</span>
+          <span>{{ project.rating_count }} evaluations</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <h2>No human-evaluation projects yet</h2>
+      <p>Create one project, upload TXT files, and start collecting blind rankings.</p>
+    </div>
+  {% endif %}
+{% endblock %}

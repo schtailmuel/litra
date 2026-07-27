@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ link.project_name }}</h1>
+      <p>{{ link.source_language }} &rarr; {{ link.target_language }} &middot; Evaluator: {{ link.evaluator_name or "evaluator" }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_download_my_annotations', token=link.token) }}">Download My Annotations</a>
+      <a class="button secondary" href="{{ url_for('human_evaluation_public_stats', token=link.token) }}">Public Stats</a>
+    </div>
+    <div class="overview-grid compact-overview eval-progress">
+      <div><strong>{{ used_credits }}</strong><span>used</span></div>
+      <div><strong>{{ link.credit_limit }}</strong><span>credits</span></div>
+      <div><strong>{{ remaining_credits }}</strong><span>remaining</span></div>
+      <div><strong>{{ total_items }}</strong><span>items total</span></div>
+    </div>
+  </div>
+
+  {% if done_reason == "limit" %}
+    <section class="form-panel">
+      <h2>Credit Limit Reached</h2>
+      <p>You have used all assigned credits for this evaluator link.</p>
+    </section>
+  {% elif done_reason == "completed" %}
+    <section class="form-panel">
+      <h2>All Done</h2>
+      <p>You have already evaluated all available items for this project. Thank you.</p>
+    </section>
+  {% elif item %}
+    <form method="post" class="stack section-gap">
+      <section class="split eval-source-reference-sticky">
+        <div class="form-panel">
+          <h2>Source #{{ item.ordinal }}</h2>
+          <div class="source-box unframed">
+            <div id="evalSourceAnnotator" class="eval-source-annotator">{{ item.source_text }}</div>
+          </div>
+          <p class="muted">
+            Click any translation card to make it active, then click a source word to start and click another source word to finish a source-side error span (untranslated, mistranslated, or wrong translation).
+          </p>
+        </div>
+        <div class="form-panel">
+          <h2>Reference</h2>
+          <div class="source-box unframed">
+            <pre id="evalReferenceText" class="eval-text">{{ item.reference_text }}</pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="form-panel">
+        <h2>Blind Candidate Ranking</h2>
+        <p class="muted">Drag cards to reorder (left-to-right, top-to-bottom = better to worse). Rank values auto-update; ties are allowed by editing selects.</p>
+        <p id="evalInteractionFeedback" class="form-note">Tip: last clicked translation card is active for source-side marking. For source and target spans, click start word then click end word.</p>
+        <div class="editor-actions">
+          <button type="button" class="secondary" data-action="auto-rank">Suggest Auto Rank</button>
+        </div>
+        <input type="hidden" name="item_id" value="{{ item.id }}">
+
+        <div class="eval-candidate-grid" data-rank-container>
+          {% for candidate in candidates %}
+            <article
+              class="source-box unframed eval-candidate-card"
+              data-candidate-model="{{ candidate.model_id }}"
+              data-rank-card
+              draggable="true"
+            >
+              <div class="eval-card-head">
+                <h3 class="eval-card-title">Translation {{ candidate.label }}</h3>
+                <small class="muted eval-order-badge" data-order-badge="{{ candidate.model_id }}">Position: --</small>
+              </div>
+
+              <div class="eval-rank-row">
+                <input type="hidden" name="model_ids" value="{{ candidate.model_id }}">
+                <label class="eval-rank-label">
+                  Rank (ties allowed)
+                  <select name="rank_{{ candidate.model_id }}" required data-rank-select="{{ candidate.model_id }}">
+                    <option value="">Select</option>
+                    {% for rank in expected_ranks %}
+                      <option value="{{ rank }}">{{ rank }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+
+              <small class="muted">Last clicked card is active for source-side marking. For style issues, click start word then click end word inside this target text.</small>
+
+              <pre class="eval-text eval-target-annotator" data-target-annotator="{{ candidate.model_id }}">{{ candidate.output_text }}</pre>
+
+              <input type="hidden" name="error_span_{{ candidate.model_id }}" value="{}" data-error-json="{{ candidate.model_id }}">
+
+              <div class="eval-mark-lists">
+                <div>
+                  <strong>Source-side error marks</strong>
+                  <div class="eval-mark-list" data-source-mark-list="{{ candidate.model_id }}">
+                    <span class="muted">No marks yet.</span>
+                  </div>
+                </div>
+                <div>
+                  <strong>Style issues in target</strong>
+                  <div class="eval-mark-list" data-style-mark-list="{{ candidate.model_id }}">
+                    <span class="muted">No marks yet.</span>
+                  </div>
+                </div>
+              </div>
+
+              <label>
+                Comment (optional)
+                <textarea name="comment_{{ candidate.model_id }}" rows="3" placeholder="Why this rank?"></textarea>
+              </label>
+            </article>
+          {% endfor %}
+        </div>
+
+        <div class="editor-actions">
+          <button type="submit">Submit Evaluation</button>
+        </div>
+      </section>
+    </form>
+  {% else %}
+    <section class="form-panel">
+      <h2>No item available</h2>
+      <p>Please reload this page in a moment.</p>
+    </section>
+  {% endif %}
+  <script src="{{ url_for('static', filename='human_eval_annotate.js') }}?v={{ STATIC_VERSION }}-he5"></script>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ project.name }} &middot; Annotation Entries</h1>
+      <p>{{ rows|length }} annotation entries</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_download_annotations', eval_project_id=project.id) }}">Download All</a>
+      <a class="button secondary" href="{{ url_for('human_evaluation_project_detail', eval_project_id=project.id) }}">Back</a>
+    </div>
+  </div>
+
+  <section class="form-panel">
+    {% if rows %}
+      <div class="eval-admin-list">
+        {% for row in rows %}
+          <article class="source-box unframed eval-admin-card">
+            <div class="page-head compact-head">
+              <div>
+                <h3>#{{ row.ordinal }} &middot; {{ row.model_name }}</h3>
+                <p class="muted">Evaluator: {{ row.evaluator_name or "evaluator" }} &middot; Rated: {{ row.rated_at }}</p>
+              </div>
+              <a class="button secondary" href="{{ url_for('human_evaluation', token=row.evaluator_token) }}">Open Link</a>
+            </div>
+
+            <div class="split-fields">
+              <label>
+                Source
+                <textarea rows="3" readonly>{{ row.source_text }}</textarea>
+              </label>
+              <label>
+                Reference
+                <textarea rows="3" readonly>{{ row.reference_text }}</textarea>
+              </label>
+            </div>
+
+            <form method="post" class="stack">
+              <input type="hidden" name="ranking_id" value="{{ row.ranking_id }}">
+              <label>
+                Rank
+                <input type="number" name="rank_value" min="1" max="{{ model_count }}" value="{{ row.rank_value }}" required>
+              </label>
+              <label>
+                Comment
+                <textarea name="comment" rows="3">{{ row.comment }}</textarea>
+              </label>
+              <label>
+                Annotation payload (JSON)
+                <textarea name="error_span" rows="4">{{ row.error_span }}</textarea>
+              </label>
+              <div class="editor-actions">
+                <button type="submit" name="action" value="save_entry">Save</button>
+                <button
+                  type="submit"
+                  class="secondary danger-text-button"
+                  name="action"
+                  value="delete_entry"
+                  onclick="return confirm('Delete this annotation entry?');"
+                >
+                  Delete
+                </button>
+              </div>
+            </form>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h2>No annotation entries yet</h2>
+        <p>Entries appear after evaluators submit rankings.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

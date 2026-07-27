@@ -2904,6 +2904,211 @@ button.danger-text-button:hover {
   font-size: 0.9rem;
 }
 
+.eval-progress {
+  min-width: 20rem;
+}
+
+.eval-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 0.98rem;
+  line-height: 1.5;
+}
+
+.eval-candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.95rem;
+  width: 100%;
+  margin: 0.95rem 0 1.15rem;
+  align-items: stretch;
+}
+
+.eval-candidate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  width: 100%;
+  height: 100%;
+}
+
+.eval-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.eval-card-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.eval-rank-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.8rem;
+}
+
+.eval-source-reference-sticky {
+  position: sticky;
+  top: 0.55rem;
+  z-index: 20;
+  margin-bottom: 1rem;
+}
+
+.eval-source-reference-sticky .form-panel {
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
+}
+
+.eval-source-reference-sticky .source-box.unframed {
+  max-height: min(34vh, 19rem);
+  overflow: auto;
+}
+
+@media (max-width: 1280px) {
+  .eval-candidate-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eval-source-reference-sticky {
+    position: static;
+  }
+
+  .eval-source-reference-sticky .source-box.unframed {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 760px) {
+  .eval-candidate-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.eval-order-badge {
+  min-width: 6.5rem;
+}
+
+.eval-rank-label {
+  min-width: 7.6rem;
+}
+
+.eval-source-annotator {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+  font-size: 0.98rem;
+  cursor: crosshair;
+}
+
+.eval-word-token {
+  border-radius: 0.38rem;
+  padding: 0.06rem 0.22rem;
+  margin: 0;
+  transition: background 0.12s ease;
+}
+
+.eval-source-annotator .eval-word-token,
+.eval-target-annotator .eval-word-token {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.eval-source-annotator .eval-word-token:hover,
+.eval-target-annotator .eval-word-token:hover {
+  background: rgba(37, 99, 235, 0.16);
+}
+
+.eval-word-token.eval-word-hover {
+  background: rgba(245, 158, 11, 0.28);
+}
+
+.eval-word-token.eval-word-pending {
+  background: rgba(251, 191, 36, 0.35);
+  outline: 1px solid rgba(217, 119, 6, 0.45);
+}
+
+.eval-word-token.eval-word-marked {
+  background: rgba(16, 185, 129, 0.3);
+}
+
+.eval-candidate-card[data-active-source="1"] {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 0;
+}
+
+.eval-card-dragging {
+  opacity: 0.6;
+  transform: scale(0.99);
+}
+
+.eval-target-annotator {
+  user-select: none;
+  cursor: crosshair;
+}
+
+.eval-mark-lists {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.eval-mark-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.4rem;
+}
+
+.eval-mark-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.eval-mark-item code {
+  display: block;
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.eval-comment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.eval-comment-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.eval-comment-card textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.eval-analytics-table .text-row {
+  align-items: center;
+}
+
+.eval-admin-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.eval-admin-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
 .footer-content {
   max-width: 1200px;
   margin: 0 auto;

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ link.project_name }} &middot; Public Stats</h1>
+      <p>{{ link.source_language }} &rarr; {{ link.target_language }} &middot; {{ link.evaluator_name or "evaluator" }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation', token=link.token) }}">Back to Evaluation</a>
+    </div>
+  </div>
+
+  <section class="form-panel section-gap" data-eval-analytics-api="{{ url_for('human_evaluation_public_stats_api', token=link.token) }}">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Current Model Ranking</h2>
+        <p class="muted">Average rank is better when lower. Auto-refreshes every 15 seconds.</p>
+      </div>
+      <small id="evalAnalyticsUpdatedAt">updated: now</small>
+    </div>
+
+    <div class="text-table eval-analytics-table">
+      <div class="text-table-head">
+        <span>Model</span>
+        <span>Avg. rank</span>
+        <span>First place</span>
+        <span>Evaluations</span>
+      </div>
+      <div id="evalAnalyticsBody">
+        {% for row in analytics_rows %}
+          <div class="text-row" data-model-id="{{ row.model_id }}">
+            <strong>{{ row.model_name }}</strong>
+            <span data-col="avg">{{ row.avg_rank_display }}</span>
+            <span data-col="first">{{ row.first_place_rate_display }}</span>
+            <small data-col="count">{{ row.ranking_count }}</small>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="form-panel section-gap" id="evalCommentGroups">
+    <h2>Model Comments</h2>
+    {% if analytics_rows %}
+      <div class="eval-comment-grid">
+        {% for row in analytics_rows %}
+          <article class="source-box unframed eval-comment-card">
+            <div class="page-head compact-head">
+              <h3>{{ row.model_name }}</h3>
+              <button type="button" class="secondary" data-copy-target="eval-comment-{{ row.model_id }}">Copy</button>
+            </div>
+            <textarea
+              id="eval-comment-{{ row.model_id }}"
+              data-model-id="{{ row.model_id }}"
+              rows="8"
+              readonly
+            >{{ row.comments_blob }}</textarea>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">Comments will appear after evaluations are submitted.</p>
+    {% endif %}
+  </section>
+
+  <script src="{{ url_for('static', filename='human_eval_project.js') }}?v={{ STATIC_VERSION }}-pub1"></script>
+{% endblock %}

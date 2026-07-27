@@ -14,7 +14,8 @@
     <a class="brand" href="{{ url_for('dashboard') }}">🪜 LITRA</a>
     <nav>
       {% if session.get("user_id") %}
-      <a href="{{ url_for('dashboard') }}">Projects</a>
+      <a href="{{ url_for('dashboard') }}">Translate</a>
+      <a href="{{ url_for('human_evaluation_dashboard') }}">Human Evaluation</a>
       <a href="{{ url_for('import_formats') }}">Import Formats</a>
       <a href="{{ url_for('about') }}">About</a>
       <a href="{{ url_for('logout') }}">Logout</a>

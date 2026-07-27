@@ -16,6 +16,7 @@ The application is designed for dataset work where every source segment can have
 - Translator workspaces with automatic text claiming, autosaved drafts, source tabs, comments, source flags, and adjustable source/target font size
 - Creator workflow for source-level review
 - Reviewer workflows for side-by-side review and fast table editing
+- Human-evaluation projects with blind ranking, source/target span annotations, evaluator credits, live stats, and annotation export/download
 - Project-level overview of all translations across all languages
 - Language-level overview and editing for a single target language
 - CSV comment import with configurable match fields, including metadata fields
@@ -31,8 +32,23 @@ The application is designed for dataset work where every source segment can have
 4. Add target languages or upload existing translations.
 5. Create translator, creator, and reviewer links.
 6. Translators claim texts automatically, edit drafts, submit translations, and add comments or source flags.
-7. Reviewers inspect translations across languages, edit translations, and mark rows as reviewed.
-8. Managers filter project data, batch-update statuses, and export JSONL, TXT, or DOCX outputs.
+7. Optionally run human evaluation: upload source/reference/model TXT files, create evaluator links, and collect blind rankings with annotations.
+8. Reviewers inspect translations across languages, edit translations, and mark rows as reviewed.
+9. Managers filter project data, batch-update statuses, and export JSONL, TXT, or DOCX outputs.
+
+## Human Evaluation
+
+Human-evaluation projects are independent from translation projects and focus on
+blind model comparison.
+
+How it works:
+
+1. Open **Human Evaluation** and create a new project.
+2. Upload one TXT for source sentences, one TXT for references, and one TXT per model output.
+3. Create evaluator links with credit limits.
+4. Evaluators receive random unseen items, rank blind translations, mark source/target spans, and add comments.
+5. Managers can monitor live average ranks, inspect model comments, list/edit/delete annotation entries, and download all annotations as JSON.
+6. Evaluators can open a public stats page and download their own annotation export.
 
 ## Data Model
 

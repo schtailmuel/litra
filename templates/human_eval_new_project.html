@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>New Human Evaluation Project</h1>
+      <p>Upload aligned TXT files: source, reference, and model outputs.</p>
+    </div>
+    <a class="button secondary" href="{{ url_for('human_evaluation_dashboard') }}">Back</a>
+  </div>
+
+  <section class="form-panel">
+    <form method="post" enctype="multipart/form-data" class="stack">
+      <label>
+        Project name
+        <input name="name" value="{{ form_state.name }}" placeholder="e.g. De->EN model ranking" required>
+      </label>
+
+      <div class="split-fields">
+        <label>
+          Source language label
+          <input name="source_language" value="{{ form_state.source_language }}" placeholder="e.g. German" required>
+        </label>
+        <label>
+          Target language label
+          <input name="target_language" value="{{ form_state.target_language }}" placeholder="e.g. English" required>
+        </label>
+      </div>
+
+      <label>
+        Source TXT (one source sentence per line)
+        <input name="source_txt" type="file" accept=".txt,text/plain" required>
+      </label>
+
+      <label>
+        Reference TXT (one reference translation per line)
+        <input name="reference_txt" type="file" accept=".txt,text/plain" required>
+      </label>
+
+      <label>
+        Model TXT files (multiple, one file per model)
+        <input name="model_files" type="file" accept=".txt,text/plain" multiple required>
+      </label>
+
+      <p class="form-note">
+        Every file must have the same number of lines. Model names are derived from filenames.
+      </p>
+
+      <button type="submit">Create Project</button>
+    </form>
+  </section>
+{% endblock %}

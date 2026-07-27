@@ -3,10 +3,26 @@
   <div class="page-head">
     <div>
       <h1>Projects</h1>
-      <p>{{ user.username }}</p>
+      <p>{{ user.username }} &middot; Translation and Human Evaluation workspace</p>
     </div>
-    <a class="button" href="{{ url_for('new_project') }}">New Project</a>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_dashboard') }}">Human Evaluation</a>
+      <a class="button" href="{{ url_for('new_project') }}">New Project</a>
+    </div>
   </div>
+
+  <section class="form-panel section-gap">
+    <h2>Also available: Human Evaluation</h2>
+    <p>
+      Run blind model comparisons with source/reference/model TXT files, create
+      evaluator links with credits, collect rank + span annotations + comments,
+      and monitor live model ranking stats.
+    </p>
+    <div class="editor-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_dashboard') }}">Open Human Evaluation</a>
+      <a class="button" href="{{ url_for('human_evaluation_new_project') }}">New Evaluation Project</a>
+    </div>
+  </section>
 
   {% if projects %}
     <div class="project-list">
