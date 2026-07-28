@@ -60,11 +60,24 @@
             <strong>{{ row.identifier }}</strong>
             <span>{{ row.source_text }}</span>
             <span>{{ row.target_text }}</span>
-            <span>{{ row.comment }}</span>
+            <span>
+              {% if row.draft_comment|trim %}
+                {{ row.draft_comment }}
+              {% elif row.comment|trim %}
+                {{ row.comment }}
+              {% elif row.thread_comment_count %}
+                {{ row.thread_comment_count }} thread comment(s)
+              {% else %}
+                -
+              {% endif %}
+            </span>
             <small>
               {{ row.status.replace("_", " ") }}
               {% if row.qa_warnings|qa_count %}
                 <br>{{ row.qa_warnings|qa_count }} warning(s)
+              {% endif %}
+              {% if row.thread_comment_count %}
+                <br>{{ row.thread_comment_count }} thread comment(s)
               {% endif %}
               <br>{{ row.updated_by or "unknown" }}
               <br>{{ row.updated_at }}

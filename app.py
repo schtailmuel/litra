@@ -6335,8 +6335,20 @@ def language_texts(project_id, target_language):
         where.append("trim(COALESCE(t.target_text, '')) = ''")
     if filters["comments"]:
         where.append(
-            "trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != ''"
+            """
+            (
+                trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != ''
+                OR EXISTS (
+                    SELECT 1
+                    FROM translation_comments tc
+                    WHERE tc.segment_id = s.id
+                      AND lower(tc.target_language) = lower(?)
+                      AND trim(COALESCE(tc.body, '')) != ''
+                )
+            )
+            """
         )
+        params.append(target_language)
     if filters["warnings"]:
         where.append("COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]')")
     where_sql = " AND ".join(where)
@@ -6367,14 +6379,26 @@ def language_texts(project_id, target_language):
                    COUNT(DISTINCT CASE WHEN COALESCE(t.status, 'untranslated') = 'approved' THEN s.id END) AS approved,
                    COUNT(DISTINCT CASE WHEN trim(COALESCE(t.target_text, '')) = '' THEN s.id END) AS missing,
                    COUNT(DISTINCT CASE WHEN COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]') THEN s.id END) AS warnings,
-                   COUNT(DISTINCT CASE WHEN trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != '' THEN s.id END) AS comments
+                   COUNT(
+                       DISTINCT CASE
+                           WHEN trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != ''
+                             OR EXISTS (
+                                 SELECT 1
+                                 FROM translation_comments tc
+                                 WHERE tc.segment_id = s.id
+                                   AND lower(tc.target_language) = lower(?)
+                                   AND trim(COALESCE(tc.body, '')) != ''
+                             )
+                           THEN s.id
+                       END
+                   ) AS comments
             FROM segments s
             LEFT JOIN translations t
               ON t.segment_id = s.id
              AND lower(t.target_language) = lower(?)
             WHERE s.project_id = ?
             """,
-            (target_language, project_id),
+            (target_language, target_language, project_id),
         ).fetchone()
         text_rows = conn.execute(
             f"""
@@ -6780,7 +6804,7 @@ def language_data_filters_from_request(values):
     }
 
 
-def language_data_where(project_id, filters):
+def language_data_where(project_id, filters, target_language=None):
     where = ["s.project_id = ?"]
     params = [project_id]
     if filters["q"]:
@@ -6808,9 +6832,23 @@ def language_data_where(project_id, filters):
     if filters["missing"]:
         where.append("trim(COALESCE(t.target_text, '') || COALESCE(t.draft_text, '')) = ''")
     if filters["comments"]:
-        where.append(
+        comment_clauses = [
             "trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != ''"
-        )
+        ]
+        if target_language:
+            comment_clauses.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM translation_comments tc
+                    WHERE tc.segment_id = s.id
+                      AND lower(tc.target_language) = lower(?)
+                      AND trim(COALESCE(tc.body, '')) != ''
+                )
+                """
+            )
+            params.append(target_language)
+        where.append("(" + " OR ".join(comment_clauses) + ")")
     if filters["warnings"]:
         where.append("COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]')")
     return " AND ".join(where), params
@@ -6890,7 +6928,18 @@ def project_translation_data_where(project_id, filters):
         where.append("trim(COALESCE(t.target_text, '') || COALESCE(t.draft_text, '')) = ''")
     if filters["comments"]:
         where.append(
-            "trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != ''"
+            """
+            (
+                trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != ''
+                OR EXISTS (
+                    SELECT 1
+                    FROM translation_comments tc
+                    WHERE tc.segment_id = s.id
+                      AND lower(tc.target_language) = lower(pl.target_language)
+                      AND trim(COALESCE(tc.body, '')) != ''
+                )
+            )
+            """
         )
     if filters["warnings"]:
         where.append("COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]')")
@@ -7005,7 +7054,19 @@ def project_translation_data(project_id):
                    COUNT(CASE WHEN COALESCE(t.status, 'untranslated') = 'needs_revision' THEN 1 END) AS needs_revision,
                    COUNT(CASE WHEN COALESCE(t.status, 'untranslated') = 'approved' THEN 1 END) AS approved,
                    COUNT(CASE WHEN COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]') THEN 1 END) AS warnings,
-                   COUNT(CASE WHEN trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != '' THEN 1 END) AS comments
+                   COUNT(
+                       CASE
+                           WHEN trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != ''
+                             OR EXISTS (
+                                 SELECT 1
+                                 FROM translation_comments tc
+                                 WHERE tc.segment_id = s.id
+                                   AND lower(tc.target_language) = lower(pl.target_language)
+                                   AND trim(COALESCE(tc.body, '')) != ''
+                             )
+                           THEN 1
+                       END
+                   ) AS comments
             FROM segments s
             JOIN project_languages pl ON pl.project_id = s.project_id
             LEFT JOIN translations t
@@ -7233,7 +7294,7 @@ def language_translation_data(project_id, target_language):
     per_page = 500
     offset = (page - 1) * per_page
     filters = language_data_filters_from_request(request.args)
-    where_sql, params = language_data_where(project_id, filters)
+    where_sql, params = language_data_where(project_id, filters, target_language)
 
     with db() as conn:
         editor_config = translation_editor_config(
@@ -7260,14 +7321,26 @@ def language_translation_data(project_id, target_language):
                    COUNT(DISTINCT CASE WHEN COALESCE(t.status, 'untranslated') = 'needs_revision' THEN s.id END) AS needs_revision,
                    COUNT(DISTINCT CASE WHEN COALESCE(t.status, 'untranslated') = 'approved' THEN s.id END) AS approved,
                    COUNT(DISTINCT CASE WHEN COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]') THEN s.id END) AS warnings,
-                   COUNT(DISTINCT CASE WHEN trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != '' THEN s.id END) AS comments
+                   COUNT(
+                       DISTINCT CASE
+                           WHEN trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != ''
+                             OR EXISTS (
+                                 SELECT 1
+                                 FROM translation_comments tc
+                                 WHERE tc.segment_id = s.id
+                                   AND lower(tc.target_language) = lower(?)
+                                   AND trim(COALESCE(tc.body, '')) != ''
+                             )
+                           THEN s.id
+                       END
+                   ) AS comments
             FROM segments s
             LEFT JOIN translations t
               ON t.segment_id = s.id
              AND lower(t.target_language) = lower(?)
             WHERE s.project_id = ?
             """,
-            (target_language, project_id),
+            (target_language, target_language, project_id),
         ).fetchone()
         rows = conn.execute(
             f"""
@@ -7314,7 +7387,7 @@ def language_translation_data_jsonl(project_id, target_language):
         abort(404)
 
     filters = language_data_filters_from_request(request.args)
-    where_sql, params = language_data_where(project_id, filters)
+    where_sql, params = language_data_where(project_id, filters, target_language)
     with db() as conn:
         rows = conn.execute(
             f"""
@@ -9183,10 +9256,18 @@ def translator_translations(token):
                     OR lower(s.source_text) LIKE ?
                     OR lower(t.target_text) LIKE ?
                     OR lower(COALESCE(t.comment, '')) LIKE ?
+                    OR lower(COALESCE(t.draft_comment, '')) LIKE ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM translation_comments tc
+                        WHERE tc.segment_id = s.id
+                          AND lower(tc.target_language) = lower(t.target_language)
+                          AND lower(COALESCE(tc.body, '')) LIKE ?
+                    )
                 )
                 """
             )
-            params.extend([like] * 4)
+            params.extend([like] * 6)
         if filters["status"] in TRANSLATION_STATUSES:
             where.append("t.status = ?")
             params.append(filters["status"])
@@ -9197,7 +9278,20 @@ def translator_translations(token):
             where.append("lower(COALESCE(t.updated_by, '')) LIKE ?")
             params.append(f"%{filters['translator'].lower()}%")
         if filters["comments"]:
-            where.append("trim(COALESCE(t.comment, '')) != ''")
+            where.append(
+                """
+                (
+                    trim(COALESCE(t.comment, '') || COALESCE(t.draft_comment, '')) != ''
+                    OR EXISTS (
+                        SELECT 1
+                        FROM translation_comments tc
+                        WHERE tc.segment_id = s.id
+                          AND lower(tc.target_language) = lower(t.target_language)
+                          AND trim(COALESCE(tc.body, '')) != ''
+                    )
+                )
+                """
+            )
         if filters["warnings"]:
             where.append("COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]')")
         rows = conn.execute(
@@ -9208,11 +9302,19 @@ def translator_translations(token):
                    s.metadata,
                    t.target_text,
                    t.comment,
+                   t.draft_comment,
                    t.status,
                    t.qa_warnings,
                    t.version,
                    t.updated_by,
-                   t.updated_at
+                   t.updated_at,
+                   (
+                       SELECT COUNT(*)
+                       FROM translation_comments tc
+                       WHERE tc.segment_id = s.id
+                         AND lower(tc.target_language) = lower(t.target_language)
+                         AND trim(COALESCE(tc.body, '')) != ''
+                   ) AS thread_comment_count
             FROM translations t
             JOIN segments s ON s.id = t.segment_id
             WHERE {" AND ".join(where)}
@@ -10355,6 +10457,7 @@ def export_project_jsonl_multi(project_id):
         return redirect(url_for("project_detail", project_id=project_id))
 
     with db() as conn:
+        format_config = project_import_config_from_conn(conn, project_id)
         allowed_languages = [
             row["target_language"]
             for row in conn.execute(

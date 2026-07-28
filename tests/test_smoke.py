@@ -380,3 +380,106 @@ def test_project_access_sharing_and_dashboards(monkeypatch, tmp_path):
     human_eval_dashboard_after = client.get("/human-evaluation")
     assert human_eval_dashboard_after.status_code == 200
     assert b"Shared Eval" not in human_eval_dashboard_after.data
+
+
+def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("owner",),
+        ).fetchone()["id"]
+
+        project_id = conn.execute(
+            """
+            INSERT INTO projects (owner_id, name, source_language, source_editable, import_mapping, created_at)
+            VALUES (?, ?, ?, 1, '{}', ?)
+            """,
+            (owner_id, "Translate Export", "English", litra_app.now_iso()),
+        ).lastrowid
+
+        conn.execute(
+            "INSERT INTO project_languages (project_id, target_language, created_at) VALUES (?, ?, ?)",
+            (project_id, "German", litra_app.now_iso()),
+        )
+        segment_id = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "msg-1", 1, "English", "Hello world", "", "{}", litra_app.now_iso()),
+        ).lastrowid
+
+        conn.execute(
+            """
+            INSERT INTO translations
+                (segment_id, target_language, target_text, comment, status, qa_warnings, version, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                segment_id,
+                "German",
+                "Hallo Welt",
+                "",
+                "submitted",
+                "[]",
+                1,
+                "translator",
+                litra_app.now_iso(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO translation_comments
+                (segment_id, target_language, role, body, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (segment_id, "German", "reviewer", "Needs tone adjustment", "reviewer", litra_app.now_iso()),
+        )
+        conn.execute(
+            """
+            INSERT INTO share_links
+                (project_id, token, target_language, label, translator_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "tok-1", "German", "", "translator", litra_app.now_iso()),
+        )
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = owner_id
+
+    language_data = client.get(f"/projects/{project_id}/languages/German/data?comments=1")
+    assert language_data.status_code == 200
+    assert b"msg-1" in language_data.data
+
+    project_data = client.get(f"/projects/{project_id}/translation-data?comments=1")
+    assert project_data.status_code == 200
+    assert b"msg-1" in project_data.data
+
+    translator_view = client.get("/t/tok-1/translations?comments=1")
+    assert translator_view.status_code == 200
+    assert b"msg-1" in translator_view.data
+    assert b"thread comment" in translator_view.data
+
+    export_response = client.post(
+        f"/projects/{project_id}/export-jsonl",
+        data={"languages": ["German"]},
+    )
+    assert export_response.status_code == 200
+    lines = [line for line in export_response.get_data(as_text=True).splitlines() if line.strip()]
+    assert len(lines) == 1
+    payload = json.loads(lines[0])
+    assert payload["identifier"] == "msg-1"
