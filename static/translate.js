@@ -20,6 +20,7 @@ const apiBase = pageBasePath
 const translationsBase = pageBasePath
   ? `${pageBasePath}/t/${token}/translations`
   : shell.dataset.translationsBase || `/t/${token}/translations`;
+const mobileCommentsMediaQuery = window.matchMedia("(max-width: 820px)");
 
 function apiUrl(path) {
   return `${apiBase}${path}`;
@@ -65,6 +66,8 @@ const els = {
   draftText: document.querySelector("#draftText"),
   useServer: document.querySelector("#useServer"),
   overwriteServer: document.querySelector("#overwriteServer"),
+  focusModeToggleButton: document.querySelector("#focusModeToggleButton"),
+  commentDrawerToggleButton: document.querySelector("#commentDrawerToggleButton"),
 };
 
 const TEXT_FONT_SIZE_STORAGE_KEY = "litra.translator.textFontSizePx";
@@ -80,7 +83,62 @@ const state = {
   draftSnapshot: "",
   legacyComment: "",
   activeSourceLanguage: "",
+  focusMode: false,
+  mobileCommentsOpen: !mobileCommentsMediaQuery.matches,
 };
+
+function setFocusMode(enabled) {
+  state.focusMode = Boolean(enabled);
+  shell.classList.toggle("focus-mode", state.focusMode);
+  if (!els.focusModeToggleButton) {
+    return;
+  }
+  els.focusModeToggleButton.classList.toggle("active", state.focusMode);
+  els.focusModeToggleButton.setAttribute("aria-pressed", state.focusMode ? "true" : "false");
+  els.focusModeToggleButton.textContent = state.focusMode ? "Default View" : "Focus View";
+}
+
+function currentCommentCount() {
+  if (!state.currentSegment) {
+    return 0;
+  }
+  return segmentComments(state.currentSegment).length;
+}
+
+function updateCommentDrawerToggle(commentCount = currentCommentCount()) {
+  if (!els.commentDrawerToggleButton) {
+    return;
+  }
+  const isMobile = mobileCommentsMediaQuery.matches;
+  const isOpen = !isMobile || state.mobileCommentsOpen;
+  const action = isOpen ? "Hide" : "Show";
+  els.commentDrawerToggleButton.textContent = `${action} Comments (${commentCount})`;
+  els.commentDrawerToggleButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  els.commentDrawerToggleButton.classList.toggle("hidden", !isMobile);
+}
+
+function applyCommentsLayout() {
+  if (mobileCommentsMediaQuery.matches) {
+    shell.classList.toggle("comments-collapsed-mobile", !state.mobileCommentsOpen);
+  } else {
+    state.mobileCommentsOpen = true;
+    shell.classList.remove("comments-collapsed-mobile");
+  }
+  updateCommentDrawerToggle();
+}
+
+function toggleMobileCommentsPanel() {
+  if (!mobileCommentsMediaQuery.matches) {
+    return;
+  }
+  state.mobileCommentsOpen = !state.mobileCommentsOpen;
+  applyCommentsLayout();
+}
+
+function handleMobileLayoutChange() {
+  state.mobileCommentsOpen = !mobileCommentsMediaQuery.matches;
+  applyCommentsLayout();
+}
 
 function clampTextFontSize(value) {
   const parsed = Number.parseInt(value, 10);
@@ -463,6 +521,7 @@ function renderComments(comments = [], message = "No comments yet.") {
     empty.className = "muted";
     empty.textContent = message;
     els.commentList.append(empty);
+    updateCommentDrawerToggle(0);
     return;
   }
 
@@ -502,6 +561,7 @@ function renderComments(comments = [], message = "No comments yet.") {
 
     els.commentList.append(item);
   });
+  updateCommentDrawerToggle(rows.length);
 }
 
 function segmentComments(segment) {
@@ -922,6 +982,20 @@ els.increaseTextFontButton.addEventListener("click", () => {
   applyTextFontSize(clampTextFontSize(els.textFontSizeSlider.value) + 1);
 });
 
+els.focusModeToggleButton?.addEventListener("click", () => {
+  setFocusMode(!state.focusMode);
+});
+
+els.commentDrawerToggleButton?.addEventListener("click", () => {
+  toggleMobileCommentsPanel();
+});
+
+if (typeof mobileCommentsMediaQuery.addEventListener === "function") {
+  mobileCommentsMediaQuery.addEventListener("change", handleMobileLayoutChange);
+} else if (typeof mobileCommentsMediaQuery.addListener === "function") {
+  mobileCommentsMediaQuery.addListener(handleMobileLayoutChange);
+}
+
 els.useServer.addEventListener("click", () => {
   if (!state.conflict || !state.currentSegment) {
     return;
@@ -950,5 +1024,7 @@ els.overwriteServer.addEventListener("click", () => {
 });
 
 initTextFontSizeControl();
+setFocusMode(false);
+applyCommentsLayout();
 loadStatus(false, true);
 attachMarkdownEditor("targetText", "targetPreview");

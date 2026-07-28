@@ -168,11 +168,32 @@ label select {
 
 .translator-context {
   display: grid;
-  grid-template-columns: minmax(10rem, 1fr) minmax(10rem, 1.1fr) auto;
+  grid-template-columns: minmax(9rem, 1fr) minmax(9rem, 1.1fr) auto auto;
   gap: 0.65rem;
   align-items: center;
   min-width: 0;
   width: min(58rem, 100%);
+}
+
+.translator-view-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.translator-view-controls button {
+  min-height: 2rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+.translator-view-controls #focusModeToggleButton.active {
+  border-color: var(--accent);
+  background: #eff6ff;
+}
+
+.comments-toggle-mobile {
+  display: none;
 }
 
 .translator-context strong,
@@ -2084,6 +2105,32 @@ button.danger-text-button:hover {
   overflow: hidden;
 }
 
+.translator-shell.focus-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.translator-shell.focus-mode .translator-side,
+.translator-shell.focus-mode .comment-side {
+  display: none;
+}
+
+.translator-shell.focus-mode .editor {
+  grid-template-rows: minmax(0, 1fr);
+  min-height: calc(100dvh - 4rem);
+}
+
+.translator-shell.focus-mode .instruction-box,
+.translator-shell.focus-mode .editor-toolbar-row,
+.translator-shell.focus-mode .editor-actions,
+.translator-shell.focus-mode .source-flag-panel,
+.translator-shell.focus-mode .conflict-panel {
+  display: none;
+}
+
+.translator-shell.focus-mode .translation-workbench {
+  height: 100%;
+}
+
 .translator-side {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
@@ -2747,6 +2794,10 @@ button.danger-text-button:hover {
     width: 100%;
   }
 
+  .comments-toggle-mobile {
+    display: inline-flex;
+  }
+
   .page-head,
   .editor-head {
     display: grid;
@@ -2831,6 +2882,10 @@ button.danger-text-button:hover {
     min-height: 24rem;
     border-left: 0;
     border-top: 1px solid var(--line);
+  }
+
+  .translator-shell.comments-collapsed-mobile .comment-side {
+    display: none;
   }
 
   .segment-list {
