@@ -22,6 +22,52 @@
     </div>
   </section>
 
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Project Access</h2>
+        <p class="muted">Invite other accounts by username to access this evaluation project.</p>
+      </div>
+    </div>
+
+    {% if can_manage_access %}
+      <form method="post" class="inline-form">
+        <input type="hidden" name="action" value="grant_human_eval_project_access">
+        <label>
+          Username
+          <input name="shared_username" placeholder="e.g. alice" required>
+        </label>
+        <button type="submit">Grant Access</button>
+      </form>
+    {% else %}
+      <p class="muted">You can use this shared project, but only the owner can manage access.</p>
+    {% endif %}
+
+    {% if shared_users %}
+      <div class="source-language-list">
+        {% for access in shared_users %}
+          <div class="source-language-row">
+            <div class="link-summary">
+              <strong>{{ access.username }}</strong>
+              <small>Granted {{ access.created_at }}</small>
+            </div>
+            {% if can_manage_access %}
+              <form method="post" onsubmit="return confirm('Remove access for {{ access.username }}?');">
+                <input type="hidden" name="action" value="remove_human_eval_project_access">
+                <input type="hidden" name="access_user_id" value="{{ access.id }}">
+                <button type="submit" class="secondary danger-text-button">Remove</button>
+              </form>
+            {% else %}
+              <small class="muted">Shared collaborator</small>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No additional users have access yet.</p>
+    {% endif %}
+  </section>
+
   <section class="split section-gap">
     <div class="form-panel">
       <h2>Add Evaluator Link</h2>

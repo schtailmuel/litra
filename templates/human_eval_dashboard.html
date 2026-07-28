@@ -24,7 +24,7 @@
         <a class="project-row" href="{{ url_for('human_evaluation_project_detail', eval_project_id=project.id) }}">
           <span>
             <strong>{{ project.name }}</strong>
-            <small>{{ project.source_language }} &rarr; {{ project.target_language }}</small>
+            <small>{{ project.source_language }} &rarr; {{ project.target_language }} &middot; {{ "Owner" if project.access_role == "owner" else "Shared" }}</small>
           </span>
           <span>{{ project.item_count }} items</span>
           <span>{{ project.model_count }} models</span>

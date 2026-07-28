@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>My Graded Sentences</h1>
+      <p>{{ link.project_name }} &middot; Evaluator: {{ link.evaluator_name or "evaluator" }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation', token=link.token) }}">Back to Evaluation</a>
+      <a class="button secondary" href="{{ url_for('human_evaluation_download_my_annotations', token=link.token) }}">Download My Annotations</a>
+    </div>
+  </div>
+
+  <section class="form-panel">
+    <h2>Restricted Evaluator View</h2>
+    <p class="muted">Only source sentences graded by this evaluator link are shown. You can reopen and adapt your ranking, or delete it.</p>
+
+    {% if rows %}
+      <div class="text-table eval-rated-table">
+        <div class="text-table-head">
+          <span>Source #</span>
+          <span>Source sentence</span>
+          <span>Submitted</span>
+          <span>Candidates</span>
+          <span>Actions</span>
+        </div>
+        {% for row in rows %}
+          <div class="text-row">
+            <small>#{{ row.ordinal }}</small>
+            <span>{{ row.source_text }}</span>
+            <small>{{ row.created_at }}</small>
+            <small>{{ row.candidate_count }}</small>
+            <div class="editor-actions">
+              <a class="button secondary" href="{{ url_for('human_evaluation', token=link.token, item=row.item_id) }}">Edit / Adapt</a>
+              <form method="post" onsubmit="return confirm('Delete your evaluation for source #{{ row.ordinal }}?');">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="item_id" value="{{ row.item_id }}">
+                <button type="submit" class="secondary">Delete</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No graded sentences yet for this evaluator link.</p>
+    {% endif %}
+  </section>
+{% endblock %}

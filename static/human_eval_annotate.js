@@ -1,23 +1,45 @@
 (function () {
   const sourceRoot = document.getElementById("evalSourceAnnotator");
-  const candidateCards = Array.from(document.querySelectorAll("[data-candidate-model]"));
   const rankContainer = document.querySelector("[data-rank-container]");
+  const rankRows = Array.from(rankContainer?.querySelectorAll("[data-rank-row][data-candidate-model]") || []);
   const feedbackNode = document.getElementById("evalInteractionFeedback");
   const referenceNode = document.getElementById("evalReferenceText");
-  if (!sourceRoot || !candidateCards.length) {
+  const commentModal = document.getElementById("evalCommentModal");
+  const commentModalField = document.getElementById("evalCommentModalField");
+  const commentModalTitle = document.getElementById("evalCommentModalTitle");
+
+  if (!sourceRoot || !rankContainer || !rankRows.length) {
     return;
   }
+
+  const spectralPalette = [
+    "#3288bd",
+    "#66c2a5",
+    "#abdda4",
+    "#e6f598",
+    "#ffffbf",
+    "#fee08b",
+    "#fdae61",
+    "#f46d43",
+    "#d53e4f",
+    "#9e0142",
+  ];
 
   const stateByModel = new Map();
   const inputByModel = new Map();
   const sourceListByModel = new Map();
   const styleListByModel = new Map();
   const targetByModel = new Map();
-  const selectByModel = new Map();
+  const rankInputByModel = new Map();
+  const rankControlsByModel = new Map();
+  const commentInputByModel = new Map();
+  const commentButtonByModel = new Map();
+  const commentPreviewByModel = new Map();
 
-  let activeModelId = String(candidateCards[0].dataset.candidateModel || "");
+  let activeModelId = String(rankRows[0].dataset.candidateModel || "");
   let pendingMarkState = null;
-  let draggedRankCard = null;
+  let draggedModelId = null;
+  let activeCommentModelId = null;
 
   function setFeedback(message) {
     if (!feedbackNode) {
@@ -31,6 +53,260 @@
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, limit);
+  }
+
+  function parseRank(value) {
+    const parsed = Number.parseInt(String(value || ""), 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  function maxRankValue() {
+    return Math.max(1, rankInputByModel.size);
+  }
+
+  function clampRank(rank) {
+    if (!Number.isInteger(rank)) {
+      return null;
+    }
+    return Math.min(Math.max(rank, 1), maxRankValue());
+  }
+
+  function rowOrder() {
+    return Array.from(rankContainer.querySelectorAll("[data-rank-row][data-candidate-model]"));
+  }
+
+  function modelOrder() {
+    return rowOrder().map((row) => String(row.dataset.candidateModel || ""));
+  }
+
+  function modelRow(modelId) {
+    return rankContainer.querySelector(`[data-rank-row][data-candidate-model="${modelId}"]`);
+  }
+
+  function modelLabel(modelId) {
+    const row = modelRow(modelId);
+    const letter = String(row?.dataset.candidateLabel || "").trim();
+    if (letter) {
+      return `Candidate ${letter}`;
+    }
+    return "Candidate";
+  }
+
+  function rankValue(modelId) {
+    return parseRank(rankInputByModel.get(modelId)?.value);
+  }
+
+  function setRankValue(modelId, rank) {
+    const input = rankInputByModel.get(modelId);
+    if (!input) {
+      return;
+    }
+    const next = clampRank(rank);
+    input.value = next ? String(next) : "";
+  }
+
+  function compareWithTie(leftValue, rightValue, epsilon = 1e-6) {
+    if (Math.abs(leftValue - rightValue) <= epsilon) {
+      return 0;
+    }
+    return leftValue < rightValue ? -1 : 1;
+  }
+
+  function colorForRank(rank) {
+    if (!rank) {
+      return "#cbd5e1";
+    }
+    const max = maxRankValue();
+    const ratio = max <= 1 ? 0 : (rank - 1) / (max - 1);
+    const colorIndex = Math.round(ratio * (spectralPalette.length - 1));
+    return spectralPalette[Math.min(Math.max(colorIndex, 0), spectralPalette.length - 1)];
+  }
+
+  function hexToRgba(hex, alpha) {
+    const clean = String(hex || "").replace("#", "");
+    if (clean.length !== 6) {
+      return `rgba(148, 163, 184, ${alpha})`;
+    }
+    const red = Number.parseInt(clean.slice(0, 2), 16);
+    const green = Number.parseInt(clean.slice(2, 4), 16);
+    const blue = Number.parseInt(clean.slice(4, 6), 16);
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+  }
+
+  function tieCountsByRank() {
+    const counts = new Map();
+    for (const modelId of rankInputByModel.keys()) {
+      const rank = rankValue(modelId);
+      if (!rank) {
+        continue;
+      }
+      counts.set(rank, (counts.get(rank) || 0) + 1);
+    }
+    return counts;
+  }
+
+  function updateRankButtons(modelId) {
+    const rank = rankValue(modelId);
+    const color = colorForRank(rank);
+    const groups = rankControlsByModel.get(modelId) || [];
+    groups.forEach((group) => {
+      group.style.setProperty("--eval-rank-color", color);
+      const buttons = Array.from(group.querySelectorAll("[data-rank-value]"));
+      buttons.forEach((button) => {
+        const candidateRank = parseRank(button.dataset.rankValue);
+        const active = rank && candidateRank === rank;
+        button.classList.toggle("active", Boolean(active));
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    });
+  }
+
+  function updateCommentButton(modelId) {
+    const input = commentInputByModel.get(modelId);
+    const button = commentButtonByModel.get(modelId);
+    const previewNode = commentPreviewByModel.get(modelId);
+    if (!button && !previewNode) {
+      return;
+    }
+    const commentText = String(input?.value || "").trim();
+    const preview = normalizeSnippet(commentText, 170);
+    const hasComment = Boolean(preview);
+    if (button) {
+      button.classList.toggle("has-comment", hasComment);
+      button.title = hasComment ? `Edit comment: ${preview}` : "Edit comment";
+    }
+    if (previewNode) {
+      previewNode.textContent = hasComment ? preview : "No comment.";
+      previewNode.title = hasComment ? commentText : "";
+    }
+  }
+
+  function updateRankUi() {
+    const rankTieCounts = tieCountsByRank();
+    for (const modelId of rankInputByModel.keys()) {
+      const rank = rankValue(modelId);
+      const color = colorForRank(rank);
+      const fill = hexToRgba(color, 0.14);
+      const tieCount = rank ? rankTieCounts.get(rank) || 1 : 0;
+      const row = modelRow(modelId);
+      if (row) {
+        row.style.setProperty("--eval-rank-color", color);
+        row.style.setProperty("--eval-rank-fill", fill);
+        row.dataset.tie = rank && tieCount > 1 ? "1" : "0";
+      }
+      updateRankButtons(modelId);
+      updateCommentButton(modelId);
+    }
+  }
+
+  function ensureInitialRanks() {
+    modelOrder().forEach((modelId, index) => {
+      if (!rankValue(modelId)) {
+        setRankValue(modelId, index + 1);
+      }
+    });
+  }
+
+  function rankSortedModelIds() {
+    const ordered = modelOrder().map((modelId, index) => {
+      const rank = rankValue(modelId);
+      return {
+        modelId,
+        rank: rank || maxRankValue() + index + 1,
+        index,
+      };
+    });
+
+    ordered.sort((left, right) => {
+      if (left.rank !== right.rank) {
+        return left.rank - right.rank;
+      }
+      return left.index - right.index;
+    });
+
+    return ordered.map((item) => item.modelId);
+  }
+
+  function snapshotRects(elements) {
+    const snapshot = new Map();
+    elements.forEach((element) => {
+      snapshot.set(element, element.getBoundingClientRect());
+    });
+    return snapshot;
+  }
+
+  function animateFromSnapshot(elements, snapshot) {
+    elements.forEach((element) => {
+      const before = snapshot.get(element);
+      if (!before) {
+        return;
+      }
+      const after = element.getBoundingClientRect();
+      const dx = before.left - after.left;
+      const dy = before.top - after.top;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
+        return;
+      }
+      element.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        {
+          duration: 260,
+          easing: "cubic-bezier(0.2, 0, 0, 1)",
+        },
+      );
+    });
+  }
+
+  function withReorderAnimation(mutator) {
+    const rows = rowOrder();
+    const snapshot = snapshotRects(rows);
+    mutator();
+    animateFromSnapshot(rowOrder(), snapshot);
+  }
+
+  function applyModelOrder(modelIds, options = {}) {
+    const { animate = true } = options;
+    const mutator = () => {
+      modelIds.forEach((modelId) => {
+        const row = modelRow(modelId);
+        if (row) {
+          rankContainer.appendChild(row);
+        }
+      });
+    };
+
+    if (animate) {
+      withReorderAnimation(mutator);
+    } else {
+      mutator();
+    }
+
+    updateRankUi();
+  }
+
+  function modelIdsAfterInsert(order, draggedId, targetId) {
+    const filtered = order.filter((modelId) => modelId !== draggedId);
+    if (!targetId || !filtered.includes(targetId)) {
+      filtered.push(draggedId);
+      return filtered;
+    }
+    const targetIndex = filtered.indexOf(targetId);
+    filtered.splice(targetIndex, 0, draggedId);
+    return filtered;
+  }
+
+  function recomputeStrictRanksFromOrder() {
+    modelOrder().forEach((modelId, index) => {
+      setRankValue(modelId, index + 1);
+    });
+  }
+
+  function reorderByRank(options = {}) {
+    const { animate = true } = options;
+    applyModelOrder(rankSortedModelIds(), { animate });
   }
 
   function tokensForBleu(text) {
@@ -133,28 +409,11 @@
     return (markedNonWhitespace * 100) / totalNonWhitespace;
   }
 
-  function modelCard(modelId) {
-    return rankContainer?.querySelector(`[data-candidate-model="${modelId}"]`) || null;
-  }
-
-  function modelLabel(modelId) {
-    const card = modelCard(modelId);
-    const title = card?.querySelector(".eval-card-title")?.textContent || "Translation";
-    return normalizeSnippet(title, 40);
-  }
-
-  function compareWithTie(leftValue, rightValue, epsilon = 1e-6) {
-    if (Math.abs(leftValue - rightValue) <= epsilon) {
-      return 0;
-    }
-    return leftValue < rightValue ? -1 : 1;
-  }
-
   function applyAutoRankSuggestion() {
     try {
       const sourceText = String(sourceRoot.dataset.rawText || sourceRoot.textContent || "");
       const referenceText = String(referenceNode?.textContent || "");
-      const modelIds = Array.from(selectByModel.keys());
+      const modelIds = Array.from(rankInputByModel.keys());
       if (!modelIds.length) {
         setFeedback("Auto-rank skipped: no candidates available.");
         return;
@@ -175,8 +434,6 @@
         const bleu = sentenceBleu(targetText, referenceText);
         return {
           modelId,
-          sourceMarkCount,
-          styleMarkCount,
           totalMarks,
           sourceErrorPercent: percent,
           bleu,
@@ -208,15 +465,6 @@
         });
       }
 
-      if (rankContainer) {
-        sorted.forEach((item) => {
-          const card = modelCard(item.modelId);
-          if (card) {
-            rankContainer.appendChild(card);
-          }
-        });
-      }
-
       let currentRank = 1;
       sorted.forEach((item, index) => {
         if (index > 0) {
@@ -229,11 +477,10 @@
             currentRank += 1;
           }
         }
-        const select = selectByModel.get(item.modelId);
-        if (select) {
-          select.value = String(currentRank);
-        }
+        setRankValue(item.modelId, currentRank);
       });
+
+      applyModelOrder(sorted.map((item) => item.modelId), { animate: true });
 
       const summary = sorted
         .slice(0, 4)
@@ -283,6 +530,9 @@
   }
 
   function tokenElements(root) {
+    if (!root) {
+      return [];
+    }
     return Array.from(root.querySelectorAll(".eval-word-token"));
   }
 
@@ -320,22 +570,27 @@
     }
     container.innerHTML = "";
     if (!marks.length) {
-      container.innerHTML = '<span class="muted">No marks yet.</span>';
+      container.innerHTML = '<span class="muted eval-mark-empty">—</span>';
       return;
     }
 
     marks.forEach((mark, index) => {
-      const row = document.createElement("div");
+      const row = document.createElement("span");
       row.className = "eval-mark-item";
 
-      const snippet = document.createElement("code");
-      snippet.textContent = normalizeSnippet(mark.text || "", 160) || "[empty]";
+      const snippet = document.createElement("span");
+      snippet.className = "eval-mark-snippet";
+      const fullSnippet = normalizeSnippet(mark.text || "", 220) || "[empty]";
+      snippet.textContent = normalizeSnippet(fullSnippet, 72) || "[empty]";
+      snippet.title = fullSnippet;
       row.appendChild(snippet);
 
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.className = "secondary";
-      remove.textContent = "Remove";
+      remove.className = "secondary eval-mark-remove";
+      remove.textContent = "✕";
+      remove.title = "Remove mark";
+      remove.setAttribute("aria-label", "Remove mark");
       remove.dataset.removeModelId = modelId;
       remove.dataset.removeType = markType;
       remove.dataset.removeIndex = String(index);
@@ -412,17 +667,20 @@
       clearPendingMark();
     }
     activeModelId = modelId;
-    candidateCards.forEach((card) => {
-      const current = String(card.dataset.candidateModel || "");
-      card.dataset.activeSource = current === activeModelId ? "1" : "0";
+    rowOrder().forEach((row) => {
+      const current = String(row.dataset.candidateModel || "");
+      row.dataset.activeSource = current === activeModelId ? "1" : "0";
     });
     renderHighlights();
     if (changed && options.announce !== false) {
-      setFeedback(`Source-side marking active for ${modelLabel(activeModelId)} (last clicked card).`);
+      setFeedback(`Source-side marking active for ${modelLabel(activeModelId)} (selected row).`);
     }
   }
 
   function tokenizeText(root) {
+    if (!root) {
+      return;
+    }
     const rawText = root.textContent || "";
     root.dataset.rawText = rawText;
     root.innerHTML = "";
@@ -542,112 +800,165 @@
     }
   }
 
-  function applyRanksFromOrder() {
-    if (!rankContainer) {
-      return;
-    }
-    const cards = Array.from(rankContainer.querySelectorAll("[data-rank-card]"));
-    cards.forEach((card, index) => {
-      const modelId = String(card.dataset.candidateModel || "");
-      const select = selectByModel.get(modelId);
-      if (!select) {
-        return;
-      }
-      select.value = String(index + 1);
-    });
-    refreshRankOrderBadges();
-  }
-
-  function refreshRankOrderBadges() {
-    if (!rankContainer) {
-      return;
-    }
-    const cards = Array.from(rankContainer.querySelectorAll("[data-rank-card]"));
-    cards.forEach((card, index) => {
-      const modelId = String(card.dataset.candidateModel || "");
-      const badge = card.querySelector(`[data-order-badge="${modelId}"]`);
-      if (badge) {
-        badge.textContent = `Position: ${index + 1}`;
-      }
+  function clearDropTargets() {
+    rankContainer.querySelectorAll(".eval-drop-target").forEach((node) => {
+      node.classList.remove("eval-drop-target");
     });
   }
 
   function enableRankDragAndDrop() {
-    if (!rankContainer) {
-      return;
-    }
+    const handles = Array.from(document.querySelectorAll("[data-drag-handle]"));
+    handles.forEach((handle) => {
+      handle.setAttribute("draggable", "true");
+    });
 
-    rankContainer.addEventListener("dragstart", (event) => {
-      const card = event.target.closest("[data-rank-card]");
-      if (!card) {
+    document.addEventListener("dragstart", (event) => {
+      const handle = event.target.closest("[data-drag-handle]");
+      if (!handle) {
         return;
       }
-      draggedRankCard = card;
-      card.classList.add("eval-card-dragging");
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", card.dataset.candidateModel || "");
+      const modelId = String(handle.dataset.dragModel || "");
+      if (!modelId) {
+        return;
+      }
+      draggedModelId = modelId;
+      const row = modelRow(modelId);
+      row?.classList.add("eval-card-dragging");
+
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", modelId);
+      }
     });
 
     rankContainer.addEventListener("dragover", (event) => {
-      if (!draggedRankCard) {
+      if (!draggedModelId) {
         return;
       }
       event.preventDefault();
-      const target = event.target.closest("[data-rank-card]");
-      if (!target || target === draggedRankCard) {
-        return;
+      clearDropTargets();
+      const target = event.target.closest("[data-rank-row]");
+      if (target && String(target.dataset.candidateModel || "") !== draggedModelId) {
+        target.classList.add("eval-drop-target");
       }
-      const rect = target.getBoundingClientRect();
-      const insertBefore = event.clientY < rect.top + rect.height / 2;
-      rankContainer.insertBefore(draggedRankCard, insertBefore ? target : target.nextSibling);
     });
 
     rankContainer.addEventListener("drop", (event) => {
-      if (!draggedRankCard) {
+      if (!draggedModelId) {
         return;
       }
       event.preventDefault();
-      applyRanksFromOrder();
-      setFeedback("Updated rank order from drag-and-drop (left-to-right, top-to-bottom). You can still set ties manually.");
+      const target = event.target.closest("[data-rank-row]");
+      const targetId = target && String(target.dataset.candidateModel || "") !== draggedModelId
+        ? String(target.dataset.candidateModel || "")
+        : null;
+      const nextOrder = modelIdsAfterInsert(modelOrder(), draggedModelId, targetId);
+      applyModelOrder(nextOrder, { animate: true });
+      recomputeStrictRanksFromOrder();
+      updateRankUi();
+      setFeedback("Inserted row before target and recomputed rankings from new order.");
+      clearDropTargets();
     });
 
-    rankContainer.addEventListener("dragend", () => {
-      if (draggedRankCard) {
-        draggedRankCard.classList.remove("eval-card-dragging");
+    document.addEventListener("dragend", () => {
+      if (!draggedModelId) {
+        return;
       }
-      draggedRankCard = null;
+      modelRow(draggedModelId)?.classList.remove("eval-card-dragging");
+      clearDropTargets();
+      draggedModelId = null;
     });
   }
 
-  candidateCards.forEach((card) => {
-    const modelId = String(card.dataset.candidateModel || "");
-    const input = card.querySelector(`[data-error-json="${modelId}"]`);
-    const sourceList = card.querySelector(`[data-source-mark-list="${modelId}"]`);
-    const styleList = card.querySelector(`[data-style-mark-list="${modelId}"]`);
-    const target = card.querySelector(`[data-target-annotator="${modelId}"]`);
-    const rankSelect = card.querySelector(`[data-rank-select="${modelId}"]`);
+  function openCommentModal(modelId) {
+    const input = commentInputByModel.get(modelId);
+    if (!commentModal || !commentModalField || !input) {
+      return;
+    }
+    activeCommentModelId = modelId;
+    commentModalField.value = input.value || "";
+    if (commentModalTitle) {
+      commentModalTitle.textContent = `Comment for ${modelLabel(modelId)}`;
+    }
+    if (typeof commentModal.showModal === "function") {
+      commentModal.showModal();
+    } else {
+      commentModal.setAttribute("open", "open");
+    }
+    commentModalField.focus();
+  }
+
+  function closeCommentModal() {
+    if (!commentModal) {
+      return;
+    }
+    if (commentModal.open && typeof commentModal.close === "function") {
+      commentModal.close();
+    } else {
+      commentModal.removeAttribute("open");
+    }
+    activeCommentModelId = null;
+  }
+
+  function saveCommentModal() {
+    if (!activeCommentModelId || !commentModalField) {
+      closeCommentModal();
+      return;
+    }
+    const input = commentInputByModel.get(activeCommentModelId);
+    if (input) {
+      input.value = commentModalField.value || "";
+      updateCommentButton(activeCommentModelId);
+    }
+    setFeedback(`Comment updated for ${modelLabel(activeCommentModelId)}.`);
+    closeCommentModal();
+  }
+
+  rankRows.forEach((row) => {
+    const modelId = String(row.dataset.candidateModel || "");
+    const input = row.querySelector(`[data-error-json="${modelId}"]`);
+    const sourceList = row.querySelector(`[data-source-mark-list="${modelId}"]`);
+    const styleList = row.querySelector(`[data-style-mark-list="${modelId}"]`);
+    const target = row.querySelector(`[data-target-annotator="${modelId}"]`);
+    const rankInput = row.querySelector(`[data-rank-input="${modelId}"]`);
+    const commentInput = row.querySelector(`[data-comment-input="${modelId}"]`);
+    const commentButton = row.querySelector(`[data-action="open-comment"][data-comment-model="${modelId}"]`);
+    const commentPreview = row.querySelector(`[data-comment-preview="${modelId}"]`);
 
     inputByModel.set(modelId, input);
     sourceListByModel.set(modelId, sourceList);
     styleListByModel.set(modelId, styleList);
-    targetByModel.set(modelId, target);
-    selectByModel.set(modelId, rankSelect);
+    rankInputByModel.set(modelId, rankInput);
+    commentInputByModel.set(modelId, commentInput);
+    commentButtonByModel.set(modelId, commentButton);
+    commentPreviewByModel.set(modelId, commentPreview);
     stateByModel.set(modelId, parseState(input?.value || ""));
 
-    card.addEventListener("pointerdown", (event) => {
+    if (target) {
+      targetByModel.set(modelId, target);
+      tokenizeText(target);
+    }
+
+    rankControlsByModel.set(
+      modelId,
+      Array.from(document.querySelectorAll(`[data-rank-controls="${modelId}"]`)),
+    );
+
+    row.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) {
+        return;
+      }
+      if (event.target.closest("button, textarea")) {
         return;
       }
       setActiveModel(modelId, { announce: false });
     });
 
-    card.addEventListener("focusin", () => {
+    row.addEventListener("focusin", () => {
       setActiveModel(modelId, { announce: false });
     });
 
-    tokenizeText(target);
-
-    target.addEventListener("click", (event) => {
+    target?.addEventListener("click", (event) => {
       const token = event.target.closest(".eval-word-token");
       if (!token) {
         return;
@@ -669,7 +980,7 @@
       setFeedback(`Style mark started for ${modelLabel(modelId)}. Click another target word to finish this span.`);
     });
 
-    target.addEventListener("mouseover", (event) => {
+    target?.addEventListener("mouseover", (event) => {
       const token = event.target.closest(".eval-word-token");
       if (!token) {
         return;
@@ -684,18 +995,18 @@
       }
     });
 
-    rankSelect?.addEventListener("change", () => {
-      setFeedback("Rank updated manually. Equal ranks are allowed.");
-    });
-
     renderModel(modelId);
+    updateCommentButton(modelId);
   });
 
   tokenizeText(sourceRoot);
-  setActiveModel(activeModelId);
+  setActiveModel(activeModelId, { announce: false });
+
+  ensureInitialRanks();
+  reorderByRank({ animate: false });
+  updateRankUi();
+
   enableRankDragAndDrop();
-  applyRanksFromOrder();
-  refreshRankOrderBadges();
 
   sourceRoot.addEventListener("click", (event) => {
     const token = event.target.closest(".eval-word-token");
@@ -732,6 +1043,10 @@
     }
   });
 
+  commentModal?.addEventListener("cancel", () => {
+    activeCommentModelId = null;
+  });
+
   document.addEventListener("click", (event) => {
     const removeButton = event.target.closest("[data-remove-model-id]");
     if (removeButton) {
@@ -742,15 +1057,41 @@
       return;
     }
 
+    const rankButton = event.target.closest("[data-rank-value][data-rank-model]");
+    if (rankButton) {
+      const modelId = String(rankButton.dataset.rankModel || "");
+      const nextRank = parseRank(rankButton.dataset.rankValue);
+      if (!modelId || !nextRank) {
+        return;
+      }
+      setRankValue(modelId, nextRank);
+      reorderByRank({ animate: true });
+      updateRankUi();
+      setFeedback(`Set ${modelLabel(modelId)} to rank ${nextRank}. Order synchronized.`);
+      return;
+    }
+
     const actionButton = event.target.closest("[data-action]");
     if (!actionButton) {
       return;
     }
-    const action = actionButton.dataset.action;
+
+    const action = String(actionButton.dataset.action || "");
     if (action === "auto-rank") {
       applyAutoRankSuggestion();
       return;
     }
-
+    if (action === "open-comment") {
+      openCommentModal(String(actionButton.dataset.commentModel || ""));
+      return;
+    }
+    if (action === "close-comment") {
+      closeCommentModal();
+      return;
+    }
+    if (action === "save-comment") {
+      saveCommentModal();
+      return;
+    }
   });
 })();

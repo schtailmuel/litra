@@ -2908,6 +2908,86 @@ button.danger-text-button:hover {
   min-width: 20rem;
 }
 
+.eval-workspace {
+  display: grid;
+  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.eval-workspace-main {
+  min-width: 0;
+}
+
+.eval-item-sidebar {
+  position: sticky;
+  top: 0.55rem;
+  max-height: min(85vh, 52rem);
+  overflow: hidden;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.eval-item-sidebar h2,
+.eval-item-sidebar p {
+  margin: 0;
+}
+
+.eval-item-index {
+  display: grid;
+  gap: 0.45rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.eval-item-link {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  background: #fff;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.eval-item-link:hover {
+  border-color: var(--accent);
+}
+
+.eval-item-link.active {
+  border-color: var(--accent);
+  background: #eff6ff;
+}
+
+.eval-item-link.done {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.eval-item-link-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.eval-item-link-head small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.eval-guidance-panel {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.eval-guidance-panel h2,
+.eval-guidance-panel p {
+  margin: 0;
+}
+
 .eval-text {
   margin: 0;
   white-space: pre-wrap;
@@ -2927,6 +3007,8 @@ button.danger-text-button:hover {
 }
 
 .eval-candidate-card {
+  --eval-rank-color: #cbd5e1;
+  --eval-rank-fill: rgba(203, 213, 225, 0.15);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -2934,6 +3016,9 @@ button.danger-text-button:hover {
   padding: 0.85rem 1rem;
   width: 100%;
   height: 100%;
+  border-left: 0.45rem solid var(--eval-rank-color);
+  background: linear-gradient(135deg, var(--eval-rank-fill) 0%, #fff 56%);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .eval-card-head {
@@ -2949,11 +3034,82 @@ button.danger-text-button:hover {
   font-weight: 700;
 }
 
+.eval-card-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
 .eval-rank-row {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: 0.8rem;
+}
+
+.eval-rank-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  --eval-rank-color: #94a3b8;
+}
+
+.eval-rank-button {
+  min-width: 2.15rem;
+  padding: 0.24rem 0.45rem;
+  line-height: 1.15;
+}
+
+.eval-rank-button.active {
+  border-color: var(--eval-rank-color);
+  background: color-mix(in srgb, var(--eval-rank-color) 16%, #ffffff);
+  color: #111827;
+}
+
+.eval-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.eval-card-meta-row small {
+  display: inline-block;
+  min-height: 1.2rem;
+}
+
+.eval-drag-handle {
+  min-width: 2rem;
+  font-weight: 800;
+  cursor: grab;
+  touch-action: none;
+}
+
+.eval-drag-handle:active {
+  cursor: grabbing;
+}
+
+.eval-ranking-actions {
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.eval-view-toggle {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.eval-view-toggle .active {
+  border-color: var(--accent);
+  background: #eff6ff;
+  color: #111827;
+}
+
+.eval-table-tradeoff {
+  margin-top: 0.35rem;
 }
 
 .eval-source-reference-sticky {
@@ -2972,33 +3128,141 @@ button.danger-text-button:hover {
   overflow: auto;
 }
 
-@media (max-width: 1280px) {
-  .eval-candidate-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .eval-source-reference-sticky {
-    position: static;
-  }
-
-  .eval-source-reference-sticky .source-box.unframed {
-    max-height: none;
-    overflow: visible;
-  }
-}
-
-@media (max-width: 760px) {
-  .eval-candidate-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 .eval-order-badge {
   min-width: 6.5rem;
 }
 
 .eval-rank-label {
-  min-width: 7.6rem;
+  min-width: 2.5rem;
+  font-weight: 700;
+}
+
+.eval-rank-table {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.95rem 0 1.15rem;
+}
+
+.eval-rank-table-body {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.eval-rank-table-head,
+.eval-rank-table-row {
+  display: grid;
+  grid-template-columns: minmax(50%, 1fr) minmax(14rem, 0.7fr);
+  align-items: start;
+  gap: 0.6rem;
+}
+
+.eval-rank-table-head {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0.4rem 0.6rem;
+}
+
+.eval-rank-table-row {
+  --eval-rank-color: #cbd5e1;
+  --eval-rank-fill: rgba(203, 213, 225, 0.12);
+  padding: 0.65rem 0.72rem;
+  border: 1px solid var(--line);
+  border-left: 0.4rem solid var(--eval-rank-color);
+  border-radius: 8px;
+  background: linear-gradient(120deg, var(--eval-rank-fill) 0%, #fff 60%);
+}
+
+.eval-row-output-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.eval-row-output-cell .eval-target-annotator {
+  flex: 1 1 auto;
+  padding: 0.15rem 0;
+}
+
+.eval-candidate-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-top: 0.2rem;
+}
+
+.eval-row-rank-cell {
+  display: grid;
+  gap: 0.28rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.eval-row-controls-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.eval-row-controls-line .eval-rank-buttons {
+  flex: 1 1 auto;
+}
+
+.eval-row-controls-line .eval-drag-handle,
+.eval-row-controls-line .eval-comment-icon {
+  flex: 0 0 auto;
+}
+
+.eval-comment-icon {
+  min-width: 2.2rem;
+  padding: 0.24rem 0.36rem;
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.eval-comment-icon.has-comment {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.eval-comment-preview {
+  display: block;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  min-height: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eval-row-mark-lists {
+  grid-column: 1 / -1;
+  margin-top: 0.15rem;
+}
+
+.eval-candidate-card[data-tie="1"],
+.eval-rank-table-row[data-tie="1"] {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--eval-rank-color) 32%, transparent);
+}
+
+.eval-rank-table-row[data-active-source="1"] {
+  outline: 3px solid rgba(0, 0, 0, 0.703);
+  outline-offset: 0;
+}
+
+.eval-drop-target {
+  outline: 2px dashed #2563eb;
+  outline-offset: 0;
 }
 
 .eval-source-annotator {
@@ -3045,7 +3309,7 @@ button.danger-text-button:hover {
 }
 
 .eval-card-dragging {
-  opacity: 0.6;
+  opacity: 0.55;
   transform: scale(0.99);
 }
 
@@ -3056,27 +3320,103 @@ button.danger-text-button:hover {
 
 .eval-mark-lists {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.28rem;
+}
+
+.eval-mark-compact-row {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  width: 100%;
+}
+
+.eval-mark-compact-row small {
+  min-width: 2.6rem;
+  margin-top: 0;
 }
 
 .eval-mark-list {
-  display: grid;
-  gap: 0.45rem;
-  margin-top: 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0;
+  min-height: 1.5rem;
+}
+
+.eval-mark-inline {
+  align-items: flex-start;
 }
 
 .eval-mark-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
+  gap: 0.2rem;
+  max-width: min(18rem, 100%);
+  padding: 0.14rem 0.32rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  white-space: nowrap;
 }
 
-.eval-mark-item code {
-  display: block;
-  max-width: 100%;
-  white-space: pre-wrap;
-  word-break: break-word;
+.eval-mark-snippet {
+  display: inline;
+  max-width: min(14rem, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eval-mark-remove {
+  min-width: 1rem;
+  min-height: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6b7280;
+  line-height: 1;
+  font-size: 0.82rem;
+}
+
+.eval-mark-remove:hover,
+.eval-mark-remove.secondary:hover {
+  background: transparent;
+  border-color: transparent;
+  color: #b91c1c;
+}
+
+.eval-mark-empty {
+  opacity: 0.85;
+}
+
+.eval-comment-modal {
+  width: min(40rem, 92vw);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0;
+}
+
+.eval-comment-modal::backdrop {
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.eval-comment-modal-inner {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.eval-comment-modal-inner h3,
+.eval-comment-modal-inner p {
+  margin: 0;
+}
+
+.eval-comment-modal-inner textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 8.5rem;
 }
 
 .eval-comment-grid {
@@ -3107,6 +3447,96 @@ button.danger-text-button:hover {
 .eval-admin-card {
   display: grid;
   gap: 0.85rem;
+}
+
+@media (max-width: 1480px) {
+  .eval-workspace {
+    grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+  }
+
+  .eval-rank-table-head,
+  .eval-rank-table-row {
+    grid-template-columns: minmax(48%, 1fr) minmax(12.5rem, 0.72fr);
+  }
+}
+
+@media (max-width: 1280px) {
+  .eval-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .eval-item-sidebar {
+    position: static;
+    max-height: none;
+  }
+
+  .eval-item-index {
+    max-height: 18rem;
+  }
+
+  .eval-candidate-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eval-source-reference-sticky {
+    position: static;
+  }
+
+  .eval-source-reference-sticky .source-box.unframed {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 980px) {
+  .eval-rank-table-head,
+  .eval-rank-table-row {
+    grid-template-columns: minmax(0, 1fr) minmax(10.5rem, 0.85fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .eval-candidate-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .eval-rank-row {
+    align-items: start;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .eval-rank-table-head {
+    display: none;
+  }
+
+  .eval-rank-table-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+    row-gap: 0.45rem;
+  }
+
+  .eval-row-controls-line {
+    justify-content: flex-start;
+  }
+
+  .eval-comment-preview {
+    white-space: normal;
+  }
+
+  .eval-mark-snippet {
+    max-width: 100%;
+  }
+}
+
+.eval-rated-table .text-table-head,
+.eval-rated-table .text-row {
+  grid-template-columns: minmax(6rem, 0.45fr) minmax(20rem, 1.55fr) minmax(10rem, 0.8fr) minmax(6rem, 0.45fr) minmax(14rem, 1fr);
+}
+
+.eval-rated-table .editor-actions {
+  justify-content: flex-start;
+  gap: 0.45rem;
 }
 
 .footer-content {

@@ -11,26 +11,13 @@
     </div>
   </div>
 
-  <section class="form-panel section-gap">
-    <h2>Also available: Human Evaluation</h2>
-    <p>
-      Run blind model comparisons with source/reference/model TXT files, create
-      evaluator links with credits, collect rank + span annotations + comments,
-      and monitor live model ranking stats.
-    </p>
-    <div class="editor-actions">
-      <a class="button secondary" href="{{ url_for('human_evaluation_dashboard') }}">Open Human Evaluation</a>
-      <a class="button" href="{{ url_for('human_evaluation_new_project') }}">New Evaluation Project</a>
-    </div>
-  </section>
-
   {% if projects %}
     <div class="project-list">
       {% for project in projects %}
         <a class="project-row" href="{{ url_for('project_detail', project_id=project.id) }}">
           <span>
             <strong>{{ project.name }}</strong>
-            <small>{{ project.source_language }} source</small>
+            <small>{{ project.source_language }} source &middot; {{ "Owner" if project.access_role == "owner" else "Shared" }}</small>
           </span>
           <span>{{ project.segment_count }} segments</span>
           <span>{{ project.language_count }} languages</span>
