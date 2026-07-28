@@ -27,6 +27,9 @@
     <p class="muted">
       In the table, click words in output text to mark style spans. Use rank buttons for ties, or drag rows by handle to enforce strict order.
     </p>
+    <p class="muted">
+      Use the note button on each marked span to explain why it was marked.
+    </p>
     <p id="evalInteractionFeedback" class="form-note">Tip: click a row to activate source-side marking for that translation.</p>
     <div class="editor-actions eval-ranking-actions">
       <button type="button" class="secondary" data-action="auto-rank">Suggest Auto Rank</button>
@@ -156,6 +159,19 @@
       <div class="editor-actions">
         <button type="button" class="secondary" data-action="close-comment">Cancel</button>
         <button type="button" data-action="save-comment">Save comment</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="evalMarkNoteModal" class="eval-comment-modal" aria-label="Mark note editor">
+    <form method="dialog" class="eval-comment-modal-inner">
+      <h3 id="evalMarkNoteModalTitle">Mark note</h3>
+      <p id="evalMarkNoteModalSnippet" class="muted"></p>
+      <textarea id="evalMarkNoteModalField" rows="6" placeholder="Why is this span marked?"></textarea>
+      <p class="muted">Optional note attached to this span and saved with your annotation JSON.</p>
+      <div class="editor-actions">
+        <button type="button" class="secondary" data-action="close-mark-note">Cancel</button>
+        <button type="button" data-action="save-mark-note">Save note</button>
       </div>
     </form>
   </dialog>

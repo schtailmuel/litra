@@ -7,6 +7,10 @@
   const commentModal = document.getElementById("evalCommentModal");
   const commentModalField = document.getElementById("evalCommentModalField");
   const commentModalTitle = document.getElementById("evalCommentModalTitle");
+  const markNoteModal = document.getElementById("evalMarkNoteModal");
+  const markNoteModalField = document.getElementById("evalMarkNoteModalField");
+  const markNoteModalTitle = document.getElementById("evalMarkNoteModalTitle");
+  const markNoteModalSnippet = document.getElementById("evalMarkNoteModalSnippet");
 
   if (!sourceRoot || !rankContainer || !rankRows.length) {
     return;
@@ -40,6 +44,7 @@
   let pendingMarkState = null;
   let draggedModelId = null;
   let activeCommentModelId = null;
+  let activeMarkNoteContext = null;
 
   function setFeedback(message) {
     if (!feedbackNode) {
@@ -49,6 +54,13 @@
   }
 
   function normalizeSnippet(value, limit = 180) {
+    return String(value || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, limit);
+  }
+
+  function normalizeMarkNote(value, limit = 320) {
     return String(value || "")
       .replace(/\s+/g, " ")
       .trim()
@@ -503,14 +515,40 @@
   }
 
   function parseState(raw) {
+    function normalizeMarks(value) {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+      return value
+        .map((mark) => {
+          if (!mark || typeof mark !== "object") {
+            return null;
+          }
+          const start = Number(mark.start || 0);
+          const end = Number(mark.end || 0);
+          const text = normalizeSnippet(mark.text || "", 220);
+          const note = normalizeMarkNote(mark.note || "", 320);
+          if (!text || end <= start) {
+            return null;
+          }
+          return {
+            start,
+            end,
+            text,
+            note,
+          };
+        })
+        .filter((mark) => Boolean(mark));
+    }
+
     if (!raw) {
       return { source_marks: [], style_marks: [] };
     }
     try {
       const parsed = JSON.parse(raw);
       return {
-        source_marks: Array.isArray(parsed?.source_marks) ? parsed.source_marks : [],
-        style_marks: Array.isArray(parsed?.style_marks) ? parsed.style_marks : [],
+        source_marks: normalizeMarks(parsed?.source_marks),
+        style_marks: normalizeMarks(parsed?.style_marks),
       };
     } catch (_error) {
       return { source_marks: [], style_marks: [] };
@@ -581,9 +619,22 @@
       const snippet = document.createElement("span");
       snippet.className = "eval-mark-snippet";
       const fullSnippet = normalizeSnippet(mark.text || "", 220) || "[empty]";
+      const note = normalizeMarkNote(mark.note || "", 320);
       snippet.textContent = normalizeSnippet(fullSnippet, 72) || "[empty]";
-      snippet.title = fullSnippet;
+      snippet.title = note ? `${fullSnippet}\nNote: ${note}` : fullSnippet;
       row.appendChild(snippet);
+
+      const noteButton = document.createElement("button");
+      noteButton.type = "button";
+      noteButton.className = "secondary eval-mark-note";
+      noteButton.textContent = note ? "📝" : "＋";
+      noteButton.title = note ? `Edit note: ${normalizeSnippet(note, 110)}` : "Add note";
+      noteButton.setAttribute("aria-label", note ? "Edit mark note" : "Add mark note");
+      noteButton.dataset.action = "edit-mark-note";
+      noteButton.dataset.noteModelId = modelId;
+      noteButton.dataset.noteType = markType;
+      noteButton.dataset.noteIndex = String(index);
+      row.appendChild(noteButton);
 
       const remove = document.createElement("button");
       remove.type = "button";
@@ -628,6 +679,7 @@
       start: Number(mark.start || 0),
       end: Number(mark.end || 0),
       text: normalizeSnippet(mark.text || "", 220),
+      note: normalizeMarkNote(mark.note || "", 320),
     };
     if (!normalized.text || normalized.end <= normalized.start) {
       return false;
@@ -638,6 +690,22 @@
     list.push(normalized);
     renderModel(modelId);
     return true;
+  }
+
+  function markListFor(state, markType) {
+    return markType === "source" ? state.source_marks : state.style_marks;
+  }
+
+  function getMark(modelId, markType, index) {
+    const state = stateByModel.get(modelId);
+    if (!state) {
+      return null;
+    }
+    const list = markListFor(state, markType);
+    if (!Array.isArray(list) || index < 0 || index >= list.length) {
+      return null;
+    }
+    return list[index];
   }
 
   function removeMark(modelId, markType, index) {
@@ -792,8 +860,8 @@
     if (created) {
       setFeedback(
         markType === "source"
-          ? "Added source-side translation-error mark."
-          : "Added target style-issue mark.",
+          ? "Added source-side translation-error mark. Use + to attach a note."
+          : "Added target style-issue mark. Use + to attach a note.",
       );
     } else {
       setFeedback("Mark already exists or was empty.");
@@ -912,6 +980,67 @@
     }
     setFeedback(`Comment updated for ${modelLabel(activeCommentModelId)}.`);
     closeCommentModal();
+  }
+
+  function openMarkNoteModal(modelId, markType, index) {
+    if (!markNoteModal || !markNoteModalField) {
+      return;
+    }
+    const mark = getMark(modelId, markType, index);
+    if (!mark) {
+      return;
+    }
+
+    activeMarkNoteContext = { modelId, markType, index };
+    markNoteModalField.value = normalizeMarkNote(mark.note || "", 320);
+
+    if (markNoteModalTitle) {
+      const prefix = markType === "source" ? "Source" : "Style";
+      markNoteModalTitle.textContent = `${prefix} mark note for ${modelLabel(modelId)}`;
+    }
+    if (markNoteModalSnippet) {
+      const snippet = normalizeSnippet(mark.text || "", 180) || "[empty span]";
+      markNoteModalSnippet.textContent = `Span: ${snippet}`;
+    }
+
+    if (typeof markNoteModal.showModal === "function") {
+      markNoteModal.showModal();
+    } else {
+      markNoteModal.setAttribute("open", "open");
+    }
+    markNoteModalField.focus();
+  }
+
+  function closeMarkNoteModal() {
+    if (!markNoteModal) {
+      return;
+    }
+    if (markNoteModal.open && typeof markNoteModal.close === "function") {
+      markNoteModal.close();
+    } else {
+      markNoteModal.removeAttribute("open");
+    }
+    activeMarkNoteContext = null;
+  }
+
+  function saveMarkNoteModal() {
+    if (!activeMarkNoteContext || !markNoteModalField) {
+      closeMarkNoteModal();
+      return;
+    }
+
+    const { modelId, markType, index } = activeMarkNoteContext;
+    const mark = getMark(modelId, markType, index);
+    if (!mark) {
+      closeMarkNoteModal();
+      return;
+    }
+
+    const note = normalizeMarkNote(markNoteModalField.value || "", 320);
+    mark.note = note;
+    renderModel(modelId);
+    setFeedback(note ? "Mark note saved." : "Mark note cleared.");
+    closeMarkNoteModal();
   }
 
   rankRows.forEach((row) => {
@@ -1047,6 +1176,10 @@
     activeCommentModelId = null;
   });
 
+  markNoteModal?.addEventListener("cancel", () => {
+    activeMarkNoteContext = null;
+  });
+
   document.addEventListener("click", (event) => {
     const removeButton = event.target.closest("[data-remove-model-id]");
     if (removeButton) {
@@ -1091,6 +1224,24 @@
     }
     if (action === "save-comment") {
       saveCommentModal();
+      return;
+    }
+    if (action === "edit-mark-note") {
+      const modelId = String(actionButton.dataset.noteModelId || "");
+      const markType = String(actionButton.dataset.noteType || "");
+      const index = Number(actionButton.dataset.noteIndex || -1);
+      if (!modelId || (markType !== "source" && markType !== "style") || index < 0) {
+        return;
+      }
+      openMarkNoteModal(modelId, markType, index);
+      return;
+    }
+    if (action === "close-mark-note") {
+      closeMarkNoteModal();
+      return;
+    }
+    if (action === "save-mark-note") {
+      saveMarkNoteModal();
       return;
     }
   });

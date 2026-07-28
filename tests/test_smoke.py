@@ -133,7 +133,7 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
             "model_ids": [str(model_ids[0]), str(model_ids[1])],
             f"rank_{model_ids[0]}": "2",
             f"rank_{model_ids[1]}": "1",
-            f"error_span_{model_ids[0]}": "",
+            f"error_span_{model_ids[0]}": '{"source_marks":[{"start":0,"end":5,"text":"Hallo","note":"wrong term"}],"style_marks":[]}',
             f"error_span_{model_ids[1]}": "",
             f"comment_{model_ids[0]}": "updated-first",
             f"comment_{model_ids[1]}": "updated-second",
@@ -152,7 +152,7 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
         ).fetchone()["count"]
         updated_rankings = conn.execute(
             """
-            SELECT hrk.rank_value, hrk.comment
+            SELECT hrk.rank_value, hrk.comment, hrk.error_span
             FROM human_eval_rankings hrk
             JOIN human_eval_ratings hr ON hr.id = hrk.rating_id
             JOIN human_eval_links hel ON hel.id = hr.link_id
@@ -164,6 +164,7 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     assert rating_count_after_revisit == 1
     assert [row["rank_value"] for row in updated_rankings] == [2, 1]
     assert [row["comment"] for row in updated_rankings] == ["updated-first", "updated-second"]
+    assert json.loads(updated_rankings[0]["error_span"])["source_marks"][0]["note"] == "wrong term"
 
     manager_download = client.get(f"/human-evaluation/{project['id']}/download-annotations")
     assert manager_download.status_code == 200
@@ -181,7 +182,45 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     assert public_stats_page.status_code == 200
     public_stats_api = client.get("/api/he/eval-token/stats")
     assert public_stats_api.status_code == 200
-    assert public_stats_api.get_json()["status"] == "ok"
+    public_stats_payload = public_stats_api.get_json()
+    assert public_stats_payload["status"] == "ok"
+    assert public_stats_payload["rank_levels"] == [1, 2]
+    rows_by_model = {
+        int(row["model_id"]): row
+        for row in public_stats_payload.get("rows", [])
+    }
+    assert rows_by_model[model_ids[0]]["rank_distribution_display"] == "2: 1 (100.0%)"
+    assert rows_by_model[model_ids[1]]["rank_distribution_display"] == "1: 1 (100.0%)"
+    assert rows_by_model[model_ids[0]]["uncommented_word_rate_display"] == "100.0%"
+    assert rows_by_model[model_ids[1]]["uncommented_word_rate_display"] == "100.0%"
+    assert "wrong term" in rows_by_model[model_ids[0]]["comments_blob"]
+    assert rows_by_model[model_ids[0]]["avg_rank_ci_display"].startswith("95% CI")
+    assert rows_by_model[model_ids[0]]["significantly_better_than_next"] is False
+    assert rows_by_model[model_ids[1]]["significantly_better_than_next"] is False
+
+    top_model_id = min(
+        rows_by_model.keys(),
+        key=lambda model_id: float(rows_by_model[model_id]["avg_rank"]),
+    )
+    top_row = rows_by_model[top_model_id]
+    assert top_row["next_pair_pvalue_display"] == "1.000"
+    assert top_row["next_model_name"] in {"model-a", "model-b", "model-a.txt", "model-b.txt"}
+    assert "wins=" in top_row["next_pair_summary"]
+
+    pairwise_by_model = {
+        int(row["model_id"]): row
+        for row in public_stats_payload.get("pairwise", [])
+    }
+    row_a_cells = {
+        int(cell["target_model_id"]): cell
+        for cell in pairwise_by_model[model_ids[0]]["cells"]
+    }
+    row_b_cells = {
+        int(cell["target_model_id"]): cell
+        for cell in pairwise_by_model[model_ids[1]]["cells"]
+    }
+    assert row_a_cells[model_ids[1]]["display"] == "0.0%"
+    assert row_b_cells[model_ids[0]]["display"] == "100.0%"
 
     annotations_page = client.get(f"/human-evaluation/{project['id']}/annotations")
     assert annotations_page.status_code == 200

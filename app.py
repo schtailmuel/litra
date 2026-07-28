@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 import os
 import random
 import re
@@ -63,6 +64,7 @@ RATE_LIMIT_ENABLED = os.environ.get("RATE_LIMIT_ENABLED", "1").lower() not in {"
 RATE_LIMIT_PUBLIC_WRITES_PER_MIN = int(os.environ.get("RATE_LIMIT_PUBLIC_WRITES_PER_MIN", "120"))
 RATE_LIMIT_AUTH_WRITES_PER_MIN = int(os.environ.get("RATE_LIMIT_AUTH_WRITES_PER_MIN", "240"))
 RATE_LIMIT_UPLOADS_PER_HOUR = int(os.environ.get("RATE_LIMIT_UPLOADS_PER_HOUR", "20"))
+HUMAN_EVAL_ERROR_SPAN_MAX_CHARS = int(os.environ.get("HUMAN_EVAL_ERROR_SPAN_MAX_CHARS", "20000"))
 _PG_POOL = None
 _DB_INITIALIZED = False
 _DB_INIT_LOCK = threading.Lock()
@@ -2702,8 +2704,15 @@ def human_eval_error_span_summary(raw):
             if not isinstance(item, dict):
                 continue
             snippet = str(item.get("text") or "").strip()
+            note = str(item.get("note") or "").strip()
+            note_singleline = note.replace("\n", " ")
             if snippet:
-                preview.append(snippet.replace("\n", " "))
+                label = snippet.replace("\n", " ")
+                if note:
+                    label += f" ({note_singleline})"
+                preview.append(label)
+            elif note:
+                preview.append(f"note: {note_singleline}")
         return preview
 
     source_preview = collect_preview(source_marks)
@@ -2743,6 +2752,171 @@ def human_eval_error_span_payload(raw):
         "source_marks": source_marks if isinstance(source_marks, list) else [],
         "style_marks": style_marks if isinstance(style_marks, list) else [],
     }
+
+
+def human_eval_mark_intervals(marks, max_length):
+    intervals = []
+    length = max(int(max_length or 0), 0)
+    for mark in marks or []:
+        if not isinstance(mark, dict):
+            continue
+        try:
+            start = int(mark.get("start", 0))
+        except (TypeError, ValueError):
+            start = 0
+        try:
+            end = int(mark.get("end", 0))
+        except (TypeError, ValueError):
+            end = 0
+        start = max(0, min(start, length))
+        end = max(start, min(end, length))
+        if end > start:
+            intervals.append((start, end))
+
+    intervals.sort(key=lambda item: (item[0], item[1]))
+    merged = []
+    for start, end in intervals:
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return [(start, end) for start, end in merged]
+
+
+def human_eval_marked_word_counts(text, marks):
+    raw = str(text or "")
+    words = list(re.finditer(r"\S+", raw))
+    total_words = len(words)
+    if total_words == 0:
+        return 0, 0
+
+    intervals = human_eval_mark_intervals(marks, len(raw))
+    if not intervals:
+        return total_words, 0
+
+    marked_words = 0
+    interval_index = 0
+    for match in words:
+        word_start, word_end = match.span()
+        while interval_index < len(intervals) and intervals[interval_index][1] <= word_start:
+            interval_index += 1
+        if interval_index >= len(intervals):
+            break
+        start, end = intervals[interval_index]
+        if start < word_end and end > word_start:
+            marked_words += 1
+
+    return total_words, marked_words
+
+
+def human_eval_rank_color(rank_value, max_rank):
+    max_rank_int = max(int(max_rank or 0), 1)
+    rank_int = max(1, min(int(rank_value or 1), max_rank_int))
+    if max_rank_int == 1:
+        hue = 145
+    else:
+        ratio = (rank_int - 1) / (max_rank_int - 1)
+        hue = 145 - (ratio * 125)
+    return f"hsl({hue:.0f} 72% 45%)"
+
+
+def human_eval_median(values):
+    ordered = sorted(float(value) for value in values)
+    size = len(ordered)
+    if size == 0:
+        return None
+    midpoint = size // 2
+    if size % 2:
+        return ordered[midpoint]
+    return (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
+
+
+def human_eval_percentile(sorted_values, percentile):
+    if not sorted_values:
+        return None
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+
+    clamped = max(0.0, min(float(percentile), 100.0))
+    position = (len(sorted_values) - 1) * (clamped / 100.0)
+    low_index = int(position)
+    high_index = min(low_index + 1, len(sorted_values) - 1)
+    weight = position - low_index
+    low = float(sorted_values[low_index])
+    high = float(sorted_values[high_index])
+    return (low * (1.0 - weight)) + (high * weight)
+
+
+def human_eval_bootstrap_ci(values, reducer, seed, sample_count=800):
+    population = [float(value) for value in values]
+    size = len(population)
+    if size == 0:
+        return None, None
+
+    rng = random.Random(int(seed))
+    statistics = []
+    for _ in range(max(int(sample_count or 0), 1)):
+        sample = [population[rng.randrange(size)] for _ in range(size)]
+        try:
+            statistic = float(reducer(sample))
+        except (TypeError, ValueError):
+            continue
+        statistics.append(statistic)
+
+    if not statistics:
+        return None, None
+    statistics.sort()
+    return human_eval_percentile(statistics, 2.5), human_eval_percentile(statistics, 97.5)
+
+
+def human_eval_pairwise_color(rate):
+    if rate is None:
+        return ""
+    ratio = max(0.0, min(float(rate), 100.0)) / 100.0
+    hue = 8 + (137 * ratio)
+    return f"hsl({hue:.0f} 72% 86%)"
+
+
+def human_eval_ci_display(low, high, decimals=2, percent=False):
+    if low is None or high is None:
+        return "--"
+    if percent:
+        return f"95% CI {low:.{decimals}f}%–{high:.{decimals}f}%"
+    return f"95% CI {low:.{decimals}f}–{high:.{decimals}f}"
+
+
+def human_eval_exact_sign_test_pvalue(wins, losses):
+    win_count = max(int(wins or 0), 0)
+    loss_count = max(int(losses or 0), 0)
+    sample_size = win_count + loss_count
+    if sample_size == 0:
+        return None
+
+    smaller_tail = min(win_count, loss_count)
+    numerator = sum(math.comb(sample_size, index) for index in range(smaller_tail + 1))
+    tail_probability = numerator / float(2 ** sample_size)
+    return min(1.0, 2.0 * tail_probability)
+
+
+def human_eval_holm_rejections(indexed_pvalues, alpha=0.05):
+    filtered = [
+        (int(index), float(value))
+        for index, value in indexed_pvalues
+        if value is not None
+    ]
+    rejected = set()
+    total_tests = len(filtered)
+    if total_tests == 0:
+        return rejected
+
+    ordered = sorted(filtered, key=lambda item: item[1])
+    for position, (index, pvalue) in enumerate(ordered):
+        threshold = float(alpha) / float(total_tests - position)
+        if pvalue <= threshold:
+            rejected.add(index)
+        else:
+            break
+    return rejected
 
 
 def human_eval_export_payload(conn, project, link_id=None):
@@ -2820,7 +2994,16 @@ def human_eval_export_payload(conn, project, link_id=None):
     }
 
 
-def human_eval_analytics_snapshot(conn, project_id):
+def human_eval_analytics_payload(conn, project_id):
+    model_count = int(
+        conn.execute(
+            "SELECT COUNT(*) AS count FROM human_eval_models WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()["count"]
+        or 0
+    )
+    max_rank = max(model_count, 1)
+
     rows = conn.execute(
         """
         SELECT hm.id AS model_id,
@@ -2839,6 +3022,56 @@ def human_eval_analytics_snapshot(conn, project_id):
         """,
         (project_id,),
     ).fetchall()
+
+    rank_values = defaultdict(list)
+    rank_counts = defaultdict(lambda: defaultdict(int))
+    rankings_by_rating = defaultdict(dict)
+    rank_rows = conn.execute(
+        """
+        SELECT hrk.rating_id,
+               hrk.model_id,
+               hrk.rank_value
+        FROM human_eval_rankings hrk
+        JOIN human_eval_models hm ON hm.id = hrk.model_id
+        WHERE hm.project_id = ?
+        ORDER BY hrk.rating_id, hrk.model_id
+        """,
+        (project_id,),
+    ).fetchall()
+    for row in rank_rows:
+        rank_value = int(row["rank_value"] or 0)
+        if rank_value <= 0:
+            continue
+        model_id = row["model_id"]
+        rank_values[model_id].append(rank_value)
+        rank_counts[model_id][rank_value] += 1
+        rankings_by_rating[row["rating_id"]][model_id] = rank_value
+
+    word_totals = defaultdict(lambda: {"total": 0, "marked": 0})
+    word_rows = conn.execute(
+        """
+        SELECT hrk.model_id,
+               hrk.error_span,
+               ho.output_text
+        FROM human_eval_rankings hrk
+        JOIN human_eval_ratings hr ON hr.id = hrk.rating_id
+        JOIN human_eval_items hi ON hi.id = hr.item_id
+        LEFT JOIN human_eval_outputs ho
+               ON ho.item_id = hr.item_id
+              AND ho.model_id = hrk.model_id
+        WHERE hi.project_id = ?
+        """,
+        (project_id,),
+    ).fetchall()
+    for row in word_rows:
+        payload = human_eval_error_span_payload(row["error_span"])
+        total_words, marked_words = human_eval_marked_word_counts(
+            row["output_text"],
+            payload.get("style_marks") if isinstance(payload, dict) else [],
+        )
+        model_words = word_totals[row["model_id"]]
+        model_words["total"] += total_words
+        model_words["marked"] += marked_words
 
     comments = defaultdict(list)
     comment_rows = conn.execute(
@@ -2872,27 +3105,229 @@ def human_eval_analytics_snapshot(conn, project_id):
         elif error_span:
             comments[row["model_id"]].append(f"#{row['ordinal']} | error: {error_span}")
 
+    ordered_model_ids = [row["model_id"] for row in rows]
+    pairwise_wins = defaultdict(lambda: defaultdict(float))
+    pairwise_counts = defaultdict(lambda: defaultdict(int))
+    pairwise_strict_wins = defaultdict(lambda: defaultdict(int))
+    pairwise_ties = defaultdict(lambda: defaultdict(int))
+    for model_ranks in rankings_by_rating.values():
+        present_model_ids = [model_id for model_id in ordered_model_ids if model_id in model_ranks]
+        for index, left_model_id in enumerate(present_model_ids):
+            for right_model_id in present_model_ids[index + 1 :]:
+                left_rank = model_ranks[left_model_id]
+                right_rank = model_ranks[right_model_id]
+                pairwise_counts[left_model_id][right_model_id] += 1
+                pairwise_counts[right_model_id][left_model_id] += 1
+                if left_rank < right_rank:
+                    pairwise_wins[left_model_id][right_model_id] += 1.0
+                    pairwise_strict_wins[left_model_id][right_model_id] += 1
+                elif right_rank < left_rank:
+                    pairwise_wins[right_model_id][left_model_id] += 1.0
+                    pairwise_strict_wins[right_model_id][left_model_id] += 1
+                else:
+                    pairwise_wins[left_model_id][right_model_id] += 0.5
+                    pairwise_wins[right_model_id][left_model_id] += 0.5
+                    pairwise_ties[left_model_id][right_model_id] += 1
+                    pairwise_ties[right_model_id][left_model_id] += 1
+
     analytics_rows = []
     for row in rows:
+        model_id = row["model_id"]
         ranking_count = int(row["ranking_count"] or 0)
         first_place_count = int(row["first_place_count"] or 0)
         avg_rank = row["avg_rank"]
         first_place_rate = (first_place_count * 100.0 / ranking_count) if ranking_count else 0.0
+
+        buckets = []
+        rank_distribution_labels = []
+        model_rank_counts = rank_counts.get(model_id, {})
+        for rank_value in range(1, max_rank + 1):
+            count = int(model_rank_counts.get(rank_value, 0))
+            rate = (count * 100.0 / ranking_count) if ranking_count else 0.0
+            buckets.append(
+                {
+                    "rank": rank_value,
+                    "count": count,
+                    "rate": rate,
+                    "color": human_eval_rank_color(rank_value, max_rank),
+                }
+            )
+            if count:
+                rank_distribution_labels.append(f"{rank_value}: {count} ({rate:.1f}%)")
+
+        median_rank = human_eval_median(rank_values.get(model_id, []))
+        if median_rank is None:
+            median_rank_display = "--"
+        elif float(median_rank).is_integer():
+            median_rank_display = str(int(median_rank))
+        else:
+            median_rank_display = f"{median_rank:.1f}"
+
+        model_seed = (int(project_id) * 1000003) + (int(model_id) * 9176)
+        avg_rank_ci_low, avg_rank_ci_high = human_eval_bootstrap_ci(
+            rank_values.get(model_id, []),
+            lambda sample: sum(sample) / max(len(sample), 1),
+            seed=model_seed + 11,
+        )
+        median_rank_ci_low, median_rank_ci_high = human_eval_bootstrap_ci(
+            rank_values.get(model_id, []),
+            lambda sample: human_eval_median(sample) or 0.0,
+            seed=model_seed + 23,
+        )
+        first_place_rate_ci_low, first_place_rate_ci_high = human_eval_bootstrap_ci(
+            rank_values.get(model_id, []),
+            lambda sample: (
+                sum(1 for value in sample if int(round(value)) == 1) * 100.0 / max(len(sample), 1)
+            ),
+            seed=model_seed + 37,
+        )
+
+        total_words = int(word_totals.get(model_id, {}).get("total", 0))
+        marked_words = int(word_totals.get(model_id, {}).get("marked", 0))
+        uncommented_words = max(total_words - marked_words, 0)
+        uncommented_word_rate = None
+        uncommented_word_rate_display = "--"
+        if total_words > 0:
+            uncommented_word_rate = (uncommented_words * 100.0) / total_words
+            uncommented_word_rate_display = f"{uncommented_word_rate:.1f}%"
+
         analytics_rows.append(
             {
-                "model_id": row["model_id"],
+                "model_id": model_id,
                 "model_name": row["model_name"],
                 "ranking_count": ranking_count,
                 "avg_rank": avg_rank,
                 "avg_rank_display": f"{avg_rank:.2f}" if avg_rank is not None else "--",
+                "avg_rank_ci_low": avg_rank_ci_low,
+                "avg_rank_ci_high": avg_rank_ci_high,
+                "avg_rank_ci_display": human_eval_ci_display(avg_rank_ci_low, avg_rank_ci_high, decimals=2),
+                "median_rank": median_rank,
+                "median_rank_display": median_rank_display,
+                "median_rank_ci_low": median_rank_ci_low,
+                "median_rank_ci_high": median_rank_ci_high,
+                "median_rank_ci_display": human_eval_ci_display(
+                    median_rank_ci_low,
+                    median_rank_ci_high,
+                    decimals=2,
+                ),
                 "first_place_count": first_place_count,
                 "first_place_rate": first_place_rate,
                 "first_place_rate_display": f"{first_place_rate:.1f}%" if ranking_count else "--",
+                "first_place_rate_ci_low": first_place_rate_ci_low,
+                "first_place_rate_ci_high": first_place_rate_ci_high,
+                "rank_distribution": buckets,
+                "rank_distribution_display": " · ".join(rank_distribution_labels)
+                if rank_distribution_labels
+                else "--",
+                "total_output_words": total_words,
+                "marked_output_words": marked_words,
+                "uncommented_words": uncommented_words,
+                "uncommented_word_rate": uncommented_word_rate,
+                "uncommented_word_rate_display": uncommented_word_rate_display,
                 "comment_count": int(row["comment_count"] or 0),
-                "comments_blob": "\n".join(comments.get(row["model_id"], [])),
+                "comments_blob": "\n".join(comments.get(model_id, [])),
+                "significantly_better_than_next": False,
+                "next_model_name": None,
+                "next_pair_pvalue": None,
+                "next_pair_pvalue_display": "--",
+                "next_pair_summary": "",
             }
         )
-    return analytics_rows
+
+    row_by_model_id = {row["model_id"]: row for row in analytics_rows}
+    model_name_by_id = {row["model_id"]: row["model_name"] for row in analytics_rows}
+    adjacent_tests = []
+    for index in range(len(ordered_model_ids) - 1):
+        source_model_id = ordered_model_ids[index]
+        target_model_id = ordered_model_ids[index + 1]
+        wins = int(pairwise_strict_wins[source_model_id].get(target_model_id, 0))
+        losses = int(pairwise_strict_wins[target_model_id].get(source_model_id, 0))
+        ties = int(pairwise_ties[source_model_id].get(target_model_id, 0))
+        pvalue = human_eval_exact_sign_test_pvalue(wins, losses)
+        adjacent_tests.append(
+            {
+                "index": index,
+                "source_model_id": source_model_id,
+                "target_model_id": target_model_id,
+                "wins": wins,
+                "losses": losses,
+                "ties": ties,
+                "pvalue": pvalue,
+                "direction_better": wins > losses,
+            }
+        )
+
+    rejected_test_indices = human_eval_holm_rejections(
+        [(test["index"], test["pvalue"]) for test in adjacent_tests],
+        alpha=0.05,
+    )
+    for test in adjacent_tests:
+        source_row = row_by_model_id.get(test["source_model_id"])
+        if not source_row:
+            continue
+
+        pvalue = test["pvalue"]
+        if pvalue is None:
+            pvalue_display = "--"
+        elif pvalue < 0.001:
+            pvalue_display = "<0.001"
+        else:
+            pvalue_display = f"{pvalue:.3f}"
+
+        source_row["next_model_name"] = model_name_by_id.get(test["target_model_id"], "next model")
+        source_row["next_pair_pvalue"] = pvalue
+        source_row["next_pair_pvalue_display"] = pvalue_display
+        source_row["next_pair_summary"] = (
+            f"vs {source_row['next_model_name']}: "
+            f"wins={test['wins']}, losses={test['losses']}, ties={test['ties']}, "
+            f"Holm-corrected sign test p={pvalue_display}"
+        )
+        source_row["significantly_better_than_next"] = (
+            test["index"] in rejected_test_indices and test["direction_better"]
+        )
+
+    pairwise_rows = []
+    for source_model_id in ordered_model_ids:
+        cells = []
+        for target_model_id in ordered_model_ids:
+            is_diagonal = source_model_id == target_model_id
+            comparisons = int(pairwise_counts[source_model_id].get(target_model_id, 0))
+            rate = None
+            if not is_diagonal and comparisons > 0:
+                rate = pairwise_wins[source_model_id].get(target_model_id, 0.0) * 100.0 / comparisons
+            cells.append(
+                {
+                    "source_model_id": source_model_id,
+                    "target_model_id": target_model_id,
+                    "is_diagonal": is_diagonal,
+                    "comparisons": comparisons,
+                    "rate": rate,
+                    "display": "--" if rate is None else f"{rate:.1f}%",
+                    "background": "" if rate is None else human_eval_pairwise_color(rate),
+                }
+            )
+
+        model_name = next(
+            (item["model_name"] for item in analytics_rows if item["model_id"] == source_model_id),
+            f"model-{source_model_id}",
+        )
+        pairwise_rows.append(
+            {
+                "model_id": source_model_id,
+                "model_name": model_name,
+                "cells": cells,
+            }
+        )
+
+    return {
+        "rows": analytics_rows,
+        "pairwise": pairwise_rows,
+        "rank_levels": list(range(1, max_rank + 1)),
+    }
+
+
+def human_eval_analytics_snapshot(conn, project_id):
+    return human_eval_analytics_payload(conn, project_id)["rows"]
 
 
 def range_label(start_ordinal, end_ordinal):
@@ -4647,7 +5082,7 @@ def human_evaluation_project_detail(eval_project_id):
             """,
             (eval_project_id,),
         ).fetchall()
-        analytics_rows = human_eval_analytics_snapshot(conn, eval_project_id)
+        analytics_payload = human_eval_analytics_payload(conn, eval_project_id)
 
     link_rows = []
     for row in links:
@@ -4663,7 +5098,9 @@ def human_evaluation_project_detail(eval_project_id):
         item_count=item_count,
         rating_count=rating_count,
         links=link_rows,
-        analytics_rows=analytics_rows,
+        analytics_rows=analytics_payload["rows"],
+        analytics_pairwise=analytics_payload["pairwise"],
+        analytics_rank_levels=analytics_payload["rank_levels"],
         shared_users=shared_users,
         can_manage_access=can_manage_access,
     )
@@ -4717,7 +5154,7 @@ def human_evaluation_project_annotations(eval_project_id):
                     )
 
                 comment = request.form.get("comment", "")[:2000]
-                error_span = request.form.get("error_span", "")[:4000]
+                error_span = request.form.get("error_span", "")[:HUMAN_EVAL_ERROR_SPAN_MAX_CHARS]
                 conn.execute(
                     """
                     UPDATE human_eval_rankings
@@ -4793,9 +5230,17 @@ def human_evaluation_project_analytics(eval_project_id):
 
     human_eval_project_for_user(eval_project_id, user["id"])
     with db() as conn:
-        rows = human_eval_analytics_snapshot(conn, eval_project_id)
+        payload = human_eval_analytics_payload(conn, eval_project_id)
 
-    return jsonify({"status": "ok", "updated_at": now_iso(), "rows": rows})
+    return jsonify(
+        {
+            "status": "ok",
+            "updated_at": now_iso(),
+            "rows": payload["rows"],
+            "pairwise": payload["pairwise"],
+            "rank_levels": payload["rank_levels"],
+        }
+    )
 
 
 @app.get("/api/he/<token>/stats")
@@ -4804,8 +5249,16 @@ def human_evaluation_public_stats_api(token):
         link = human_eval_link_for_token(conn, token)
         if not link:
             abort(404)
-        rows = human_eval_analytics_snapshot(conn, link["project_id"])
-    return jsonify({"status": "ok", "updated_at": now_iso(), "rows": rows})
+        payload = human_eval_analytics_payload(conn, link["project_id"])
+    return jsonify(
+        {
+            "status": "ok",
+            "updated_at": now_iso(),
+            "rows": payload["rows"],
+            "pairwise": payload["pairwise"],
+            "rank_levels": payload["rank_levels"],
+        }
+    )
 
 
 @app.get("/human-evaluation/<int:eval_project_id>/download-annotations")
@@ -8829,9 +9282,15 @@ def human_evaluation_public_stats(token):
         link = human_eval_link_for_token(conn, token)
         if not link:
             abort(404)
-        analytics_rows = human_eval_analytics_snapshot(conn, link["project_id"])
+        analytics_payload = human_eval_analytics_payload(conn, link["project_id"])
 
-    return render_template("human_eval_public_stats.html", link=link, analytics_rows=analytics_rows)
+    return render_template(
+        "human_eval_public_stats.html",
+        link=link,
+        analytics_rows=analytics_payload["rows"],
+        analytics_pairwise=analytics_payload["pairwise"],
+        analytics_rank_levels=analytics_payload["rank_levels"],
+    )
 
 
 @app.get("/he/<token>/download-annotations")
@@ -9006,7 +9465,7 @@ def human_evaluation(token):
                 for model_id in model_ids:
                     payload = (
                         ranking_values[model_id],
-                        request.form.get(f"error_span_{model_id}", "")[:4000],
+                        request.form.get(f"error_span_{model_id}", "")[:HUMAN_EVAL_ERROR_SPAN_MAX_CHARS],
                         request.form.get(f"comment_{model_id}", "")[:2000],
                         rating_id,
                         model_id,
@@ -9043,7 +9502,7 @@ def human_evaluation(token):
                                 rating_id,
                                 model_id,
                                 ranking_values[model_id],
-                                request.form.get(f"error_span_{model_id}", "")[:4000],
+                                request.form.get(f"error_span_{model_id}", "")[:HUMAN_EVAL_ERROR_SPAN_MAX_CHARS],
                                 request.form.get(f"comment_{model_id}", "")[:2000],
                             ),
                         )
@@ -9087,7 +9546,7 @@ def human_evaluation(token):
                             rating_id,
                             model_id,
                             ranking_values[model_id],
-                            request.form.get(f"error_span_{model_id}", "")[:4000],
+                            request.form.get(f"error_span_{model_id}", "")[:HUMAN_EVAL_ERROR_SPAN_MAX_CHARS],
                             request.form.get(f"comment_{model_id}", "")[:2000],
                         ),
                     )

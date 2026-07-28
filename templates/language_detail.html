@@ -10,6 +10,7 @@
       <p>{{ project.name }} &middot; {{ done }} / {{ total }} complete</p>
     </div>
     <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('project_detail', project_id=project.id) }}">Back to Overview</a>
       <a class="button secondary" href="{{ url_for('language_texts', project_id=project.id, target_language=target_language) }}">Texts</a>
       <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language) }}">Translation Data</a>
       <a class="button secondary" href="{{ url_for('export_project', project_id=project.id, target_language=target_language) }}">Export</a>

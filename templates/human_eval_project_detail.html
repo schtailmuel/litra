@@ -9,7 +9,7 @@
     <div class="page-actions">
       <a class="button secondary" href="{{ url_for('human_evaluation_download_annotations', eval_project_id=project.id) }}">Download All Annotations</a>
       <a class="button secondary" href="{{ url_for('human_evaluation_project_annotations', eval_project_id=project.id) }}">Manage Annotation Entries</a>
-      <a class="button secondary" href="{{ url_for('human_evaluation_dashboard') }}">Back</a>
+      <a class="button secondary" href="{{ url_for('human_evaluation_dashboard') }}">Back to Overview</a>
     </div>
   </div>
 
@@ -143,8 +143,8 @@
   <section class="form-panel section-gap" data-eval-analytics-api="{{ url_for('human_evaluation_project_analytics', eval_project_id=project.id) }}">
     <div class="page-head compact-head">
       <div>
-        <h2>Live Analysis</h2>
-        <p class="muted">Average rank is better when lower. Auto-refreshes every 15 seconds.</p>
+        <h2>Ranking Analysis</h2>
+        <p class="muted">Lower ranks are better.</p>
       </div>
       <small id="evalAnalyticsUpdatedAt">updated: now</small>
     </div>
@@ -154,18 +154,84 @@
         <span>Model</span>
         <span>Avg. rank</span>
         <span>First place</span>
+        <span>Rank distribution</span>
+        <span>Uncommented words</span>
         <span>Evaluations</span>
       </div>
       <div id="evalAnalyticsBody">
         {% for row in analytics_rows %}
-          <div class="text-row" data-model-id="{{ row.model_id }}">
+          <div
+            class="text-row{% if row.significantly_better_than_next %} eval-row-significant{% endif %}"
+            data-model-id="{{ row.model_id }}"
+            data-significant-next="{{ '1' if row.significantly_better_than_next else '0' }}"
+            {% if row.next_pair_summary %}title="{{ row.next_pair_summary }}"{% endif %}
+          >
             <strong>{{ row.model_name }}</strong>
-            <span data-col="avg">{{ row.avg_rank_display }}</span>
-            <span data-col="first">{{ row.first_place_rate_display }}</span>
+            <div class="eval-metric-cell">
+              <span data-col="avg">{{ row.avg_rank_display }}</span>
+              <small data-col="avg-ci">{{ row.avg_rank_ci_display }}</small>
+            </div>
+            <div class="eval-metric-cell">
+              <span data-col="first">{{ row.first_place_rate_display }}</span>
+            </div>
+            <div class="eval-rank-dist-meta">
+              <small data-col="dist">{{ row.rank_distribution_display }}</small>
+              <div class="eval-rank-dist" data-col="dist-bar" aria-label="{{ row.rank_distribution_display }}">
+                {% for bucket in row.rank_distribution %}
+                  {% if bucket.rate > 0 %}
+                    <span
+                      class="eval-rank-dist-seg"
+                      style="width: {{ '%.4f'|format(bucket.rate) }}%; background: {{ bucket.color }};"
+                      title="Rank {{ bucket.rank }}: {{ bucket.count }}"
+                    ></span>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            </div>
+            <span data-col="ok">{{ row.uncommented_word_rate_display }}</span>
             <small data-col="count">{{ row.ranking_count }}</small>
           </div>
         {% endfor %}
       </div>
+    </div>
+  </section>
+
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Pairwise Win-Rate Heatmap</h2>
+        <p class="muted">Cell A→B shows how often A is ranked better than B.</p>
+      </div>
+    </div>
+    <div id="evalPairwiseHeatmap" class="eval-heatmap-wrap">
+      {% if analytics_pairwise %}
+        <table class="eval-heatmap-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              {% for column in analytics_pairwise %}
+                <th>{{ column.model_name }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in analytics_pairwise %}
+              <tr>
+                <th>{{ row.model_name }}</th>
+                {% for cell in row.cells %}
+                  <td
+                    {% if cell.is_diagonal %}class="diag"{% endif %}
+                    {% if cell.background %}style="background: {{ cell.background }};"{% endif %}
+                    title="{% if cell.is_diagonal %}Same model{% elif cell.comparisons %}{{ cell.comparisons }} paired evaluations{% else %}No overlapping evaluations{% endif %}"
+                  >{{ cell.display }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">Heatmap appears after evaluations are submitted.</p>
+      {% endif %}
     </div>
   </section>
 

@@ -3423,7 +3423,8 @@ button.danger-text-button:hover {
   white-space: nowrap;
 }
 
-.eval-mark-remove {
+.eval-mark-remove,
+.eval-mark-remove.secondary {
   min-width: 1rem;
   min-height: 1rem;
   height: 1rem;
@@ -3433,6 +3434,26 @@ button.danger-text-button:hover {
   color: #6b7280;
   line-height: 1;
   font-size: 0.82rem;
+}
+
+.eval-mark-note,
+.eval-mark-note.secondary {
+  min-width: 1rem;
+  min-height: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  line-height: 1;
+  font-size: 0.78rem;
+}
+
+.eval-mark-note:hover,
+.eval-mark-note.secondary:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent-dark);
 }
 
 .eval-mark-remove:hover,
@@ -3492,6 +3513,101 @@ button.danger-text-button:hover {
 
 .eval-analytics-table .text-row {
   align-items: center;
+}
+
+.eval-analytics-table .text-row.eval-row-significant {
+  border-color: var(--ok);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 42%, white);
+}
+
+.eval-analytics-table .text-table-head,
+.eval-analytics-table .text-row {
+  grid-template-columns: minmax(9rem, 1fr) minmax(6.5rem, 0.5fr) minmax(6.5rem, 0.5fr) minmax(18rem, 1.4fr) minmax(9rem, 0.8fr) minmax(5.5rem, 0.42fr);
+}
+
+.eval-rank-dist-meta {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.eval-metric-cell {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.eval-metric-cell small {
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.74rem;
+}
+
+.eval-rank-dist-meta small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.eval-rank-dist {
+  display: flex;
+  width: 100%;
+  min-height: 0.68rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f2f4f7;
+}
+
+.eval-rank-dist-seg {
+  display: block;
+  min-width: 2px;
+  height: 100%;
+}
+
+.eval-rank-dist-empty {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.eval-rank-dist-large {
+  min-height: 0.95rem;
+}
+
+.eval-heatmap-wrap {
+  overflow-x: auto;
+}
+
+.eval-heatmap-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0.3rem;
+  min-width: 28rem;
+}
+
+.eval-heatmap-table th,
+.eval-heatmap-table td {
+  padding: 0.46rem 0.52rem;
+  border-radius: 6px;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.eval-heatmap-table th {
+  background: #f3f6fa;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.eval-heatmap-table td {
+  background: #fbfcfd;
+  border: 1px solid #e5e9ee;
+  font-weight: 700;
+}
+
+.eval-heatmap-table td.diag {
+  color: var(--muted);
+  background: #eef2f6;
+  border-color: #dce3ea;
 }
 
 .eval-admin-list {
