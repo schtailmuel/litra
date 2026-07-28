@@ -6763,10 +6763,18 @@ def language_texts(project_id, target_language):
                 OR lower(COALESCE(t.draft_text, '')) LIKE ?
                 OR lower(COALESCE(t.comment, '')) LIKE ?
                 OR lower(COALESCE(t.draft_comment, '')) LIKE ?
+                OR EXISTS (
+                    SELECT 1
+                    FROM translation_comments tc
+                    WHERE tc.segment_id = s.id
+                      AND lower(tc.target_language) = lower(?)
+                      AND lower(COALESCE(tc.body, '')) LIKE ?
+                )
             )
             """
         )
         params.extend([like] * 6)
+        params.extend([target_language, like])
     if filters["status"] in TRANSLATION_STATUSES:
         where.append("COALESCE(t.status, 'untranslated') = ?")
         params.append(filters["status"])
@@ -6872,6 +6880,13 @@ def language_texts(project_id, target_language):
                    t.updated_at,
                    t.draft_updated_by,
                    t.draft_updated_at,
+                   (
+                       SELECT COUNT(*)
+                       FROM translation_comments tc
+                       WHERE tc.segment_id = s.id
+                         AND lower(tc.target_language) = lower(?)
+                         AND trim(COALESCE(tc.body, '')) != ''
+                   ) AS thread_comment_count,
                    c.status AS claim_status,
                    c.translator_name AS claimed_by
             FROM segments s
@@ -6885,7 +6900,7 @@ def language_texts(project_id, target_language):
             ORDER BY s.ordinal
             LIMIT ? OFFSET ?
             """,
-            (target_language, target_language, *params, per_page, offset),
+            (target_language, target_language, target_language, *params, per_page, offset),
         ).fetchall()
 
     return render_template(

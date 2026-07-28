@@ -150,6 +150,17 @@
               Saved comment
               <textarea name="comment" rows="2">{{ row.draft_comment if row.draft_comment else row.comment }}</textarea>
             </label>
+            <small class="muted">
+              {% if row.draft_comment|trim %}
+                {{ row.draft_comment }}
+              {% elif row.comment|trim %}
+                {{ row.comment }}
+              {% elif row.thread_comment_count %}
+                {{ row.thread_comment_count }} thread comment(s)
+              {% else %}
+                No comment.
+              {% endif %}
+            </small>
           </div>
 
           <div class="fast-review-controls">

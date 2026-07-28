@@ -106,7 +106,17 @@
             <a href="{{ url_for('language_text_edit', project_id=project.id, target_language=target_language, segment_id=row.id) }}"><strong>{{ row.identifier }}</strong></a>
             <span>{{ row.source_text }}</span>
             <span>{{ row.target_text }}</span>
-            <span>{{ row.comment }}</span>
+            <span>
+              {% if row.draft_comment|trim %}
+                {{ row.draft_comment }}
+              {% elif row.comment|trim %}
+                {{ row.comment }}
+              {% elif row.thread_comment_count %}
+                {{ row.thread_comment_count }} thread comment(s)
+              {% else %}
+                -
+              {% endif %}
+            </span>
             <small>
               {{ row.status.replace("_", " ") }}
               {% if row.qa_warnings|qa_count %}

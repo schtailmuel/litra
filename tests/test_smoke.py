@@ -494,6 +494,14 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
             """,
             (project_id, "tok-1", "German", "", "translator", litra_app.now_iso()),
         )
+        conn.execute(
+            """
+            INSERT INTO review_links
+                (project_id, token, reviewer_name, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (project_id, "rev-1", "reviewer", litra_app.now_iso()),
+        )
         conn.commit()
 
     client = litra_app.app.test_client()
@@ -504,6 +512,10 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
     assert language_data.status_code == 200
     assert b"msg-1" in language_data.data
 
+    language_table = client.get(f"/projects/{project_id}/languages/German/texts?comments=1")
+    assert language_table.status_code == 200
+    assert b"thread comment" in language_table.data
+
     project_data = client.get(f"/projects/{project_id}/translation-data?comments=1")
     assert project_data.status_code == 200
     assert b"msg-1" in project_data.data
@@ -512,6 +524,14 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
     assert translator_view.status_code == 200
     assert b"msg-1" in translator_view.data
     assert b"thread comment" in translator_view.data
+
+    reviewer_fast_list = client.get("/r/rev-1/texts?comments=1")
+    assert reviewer_fast_list.status_code == 200
+    assert b"thread comment" in reviewer_fast_list.data
+
+    reviewer_overview = client.get("/r/rev-1")
+    assert reviewer_overview.status_code == 200
+    assert b"Needs tone adjustment" in reviewer_overview.data
 
     export_response = client.post(
         f"/projects/{project_id}/export-jsonl",

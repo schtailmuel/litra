@@ -102,7 +102,7 @@
                   {% endif %}
                   <label>
                     Comment
-                    <textarea name="comment" rows="3">{{ item.comment }}</textarea>
+                    <textarea name="comment" rows="3">{{ item.draft_comment if item.draft_comment else item.comment }}</textarea>
                   </label>
                   <label>
                     Status
