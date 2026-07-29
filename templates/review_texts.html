@@ -19,7 +19,7 @@
   </div>
 
   <section class="form-panel">
-    <form method="get" class="filter-panel">
+    <form method="get" class="filter-panel compact-filter-panel">
       <label>
         Search
         <input name="q" value="{{ filters.q }}" placeholder="ID, source, translation, comment">
@@ -90,7 +90,7 @@
         <span>ID</span>
         <span>Source</span>
         <span>Translation</span>
-        <span>Status</span>
+        <span>Actions</span>
       </div>
       {% for row in text_rows %}
         <form method="post" class="fast-review-row" id="slot-{{ row.segment_id }}-{{ row.target_language|replace(' ', '-') }}">
@@ -107,7 +107,7 @@
 
           <div class="fast-review-id">
             <strong>{{ row.identifier }}</strong>
-            <small>{{ row.target_language }}</small>
+            <small class="fast-review-slot-meta">{{ row.target_language }} &middot; #{{ row.ordinal }}</small>
             <span class="review-status {{ 'reviewed' if row.status == 'approved' else row.status }}">{{ 'reviewed' if row.status == 'approved' else row.status.replace("_", " ") }}</span>
           </div>
 
@@ -150,17 +150,38 @@
               Saved comment
               <textarea name="comment" rows="2">{{ row.draft_comment if row.draft_comment else row.comment }}</textarea>
             </label>
-            <small class="muted">
-              {% if row.draft_comment|trim %}
-                {{ row.draft_comment }}
-              {% elif row.comment|trim %}
-                {{ row.comment }}
-              {% elif row.thread_comment_count %}
-                {{ row.thread_comment_count }} thread comment(s)
-              {% else %}
-                No comment.
-              {% endif %}
-            </small>
+            {% if row.thread_comments %}
+              <div class="fast-thread-comments">
+                <strong>Thread comments ({{ row.thread_comments|length }})</strong>
+                {% for comment in row.thread_comments[:2] %}
+                  <div class="fast-thread-comment {% if comment.resolved %}resolved{% endif %}">
+                    <span class="fast-thread-meta">
+                      {{ comment.role }}
+                      {% if comment.created_by %}&middot; {{ comment.created_by }}{% endif %}
+                    </span>
+                    <p>{{ comment.body }}</p>
+                  </div>
+                {% endfor %}
+                {% if row.thread_comments|length > 2 %}
+                  <details class="fast-thread-more">
+                    <summary>Show {{ row.thread_comments|length - 2 }} more comment(s)</summary>
+                    {% for comment in row.thread_comments[2:] %}
+                      <div class="fast-thread-comment {% if comment.resolved %}resolved{% endif %}">
+                        <span class="fast-thread-meta">
+                          {{ comment.role }}
+                          {% if comment.created_by %}&middot; {{ comment.created_by }}{% endif %}
+                        </span>
+                        <p>{{ comment.body }}</p>
+                      </div>
+                    {% endfor %}
+                  </details>
+                {% endif %}
+              </div>
+            {% elif row.draft_comment|trim or row.comment|trim %}
+              <small class="muted">Saved comment exists; no thread comments.</small>
+            {% else %}
+              <small class="muted">No comments yet.</small>
+            {% endif %}
           </div>
 
           <div class="fast-review-controls">
@@ -172,13 +193,15 @@
                 {% endfor %}
               </select>
             </label>
-            <small>
+            <small class="fast-review-meta-line">
               {% if row.updated_by %}Updated by {{ row.updated_by }}{% else %}No saved translation{% endif %}
-              {% if row.updated_at %}<br>{{ row.updated_at }}{% endif %}
-              {% if row.thread_comment_count %}<br>{{ row.thread_comment_count }} thread comment(s){% endif %}
-              {% if row.qa_warnings|qa_count %}<br>{{ row.qa_warnings|qa_count }} QA warning(s){% endif %}
-              {% if row.draft_text|trim and row.status != "draft" %}<br>has draft{% endif %}
+              {% if row.updated_at %} &middot; {{ row.updated_at }}{% endif %}
             </small>
+            <div class="fast-review-meta-tags">
+              {% if row.thread_comment_count %}<span>{{ row.thread_comment_count }} comment(s)</span>{% endif %}
+              {% if row.qa_warnings|qa_count %}<span>{{ row.qa_warnings|qa_count }} QA</span>{% endif %}
+              {% if row.draft_text|trim and row.status != "draft" %}<span>has draft</span>{% endif %}
+            </div>
             <div class="review-actions">
               <button type="submit" name="action" value="save_translation">Save</button>
               <button type="submit" name="action" value="mark_reviewed" class="secondary">Mark Reviewed</button>

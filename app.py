@@ -4336,6 +4336,15 @@ def docx_external_comments_block(item):
     thread_comments = item.get("thread_comments") or []
     if thread_comments:
         paragraphs.append(docx_blank_paragraphs(1))
+        paragraphs.append(
+            docx_paragraph(
+                "Thread comments:",
+                bold=True,
+                color=color,
+                spacing_before=80,
+                spacing_after=40,
+            )
+        )
         for index, comment in enumerate(thread_comments):
                         
             # Comment body
@@ -8813,12 +8822,68 @@ def review_project_texts(token):
             (*params, per_page, offset),
         ).fetchall()
 
+        thread_comments_map = {}
+        if text_rows:
+            slot_keys = {
+                (row["segment_id"], str(row["target_language"] or "").lower())
+                for row in text_rows
+            }
+            segment_ids = sorted({segment_id for segment_id, _ in slot_keys})
+            if segment_ids:
+                placeholders = ",".join("?" for _ in segment_ids)
+                thread_comment_rows = conn.execute(
+                    f"""
+                    SELECT segment_id,
+                           target_language,
+                           role,
+                           body,
+                           resolved,
+                           created_by,
+                           created_at,
+                           resolved_by,
+                           resolved_at,
+                           id
+                    FROM translation_comments
+                    WHERE segment_id IN ({placeholders})
+                    ORDER BY segment_id,
+                             lower(target_language),
+                             resolved ASC,
+                             created_at DESC,
+                             id DESC
+                    """,
+                    tuple(segment_ids),
+                ).fetchall()
+                for comment in thread_comment_rows:
+                    key = (
+                        comment["segment_id"],
+                        str(comment["target_language"] or "").lower(),
+                    )
+                    if key not in slot_keys:
+                        continue
+                    thread_comments_map.setdefault(key, []).append(
+                        {
+                            "role": comment["role"],
+                            "body": comment["body"],
+                            "resolved": bool(comment["resolved"]),
+                            "created_by": comment["created_by"],
+                            "created_at": comment["created_at"],
+                            "resolved_by": comment["resolved_by"],
+                            "resolved_at": comment["resolved_at"],
+                        }
+                    )
+        else:
+            thread_comments_map = {}
+
     rows = []
     for row in text_rows:
         item = dict(row)
         item["source_lines"] = split_lines(item["source_text"])
         active_target = item["draft_text"] or item["target_text"] or ""
         item["target_lines"] = split_lines(active_target)
+        item["thread_comments"] = thread_comments_map.get(
+            (item["segment_id"], str(item["target_language"] or "").lower()),
+            [],
+        )
         rows.append(item)
 
     return render_template(

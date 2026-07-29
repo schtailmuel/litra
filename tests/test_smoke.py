@@ -616,7 +616,8 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
 
     reviewer_fast_list = client.get("/r/rev-1/texts?comments=1")
     assert reviewer_fast_list.status_code == 200
-    assert b"thread comment" in reviewer_fast_list.data
+    assert b"Thread comments" in reviewer_fast_list.data
+    assert b"Needs tone adjustment" in reviewer_fast_list.data
 
     reviewer_overview = client.get("/r/rev-1")
     assert reviewer_overview.status_code == 200
