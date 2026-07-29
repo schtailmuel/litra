@@ -5034,17 +5034,25 @@ def human_evaluation_new_project():
 
     try:
         source_lines = parse_text_upload_lines(source_upload, "Source TXT")
-        reference_lines = parse_text_upload_lines(reference_upload, "Reference TXT")
     except ValueError as exc:
         flash(str(exc))
         return render_template("human_eval_new_project.html", form_state=form_state)
 
-    if len(source_lines) != len(reference_lines):
-        flash(
-            "Source and reference files must contain the same number of lines "
-            f"(source {len(source_lines)}, reference {len(reference_lines)})."
-        )
-        return render_template("human_eval_new_project.html", form_state=form_state)
+    if reference_upload and getattr(reference_upload, "filename", ""):
+        try:
+            reference_lines = parse_text_upload_lines(reference_upload, "Reference TXT")
+        except ValueError as exc:
+            flash(str(exc))
+            return render_template("human_eval_new_project.html", form_state=form_state)
+
+        if len(source_lines) != len(reference_lines):
+            flash(
+                "Source and reference files must contain the same number of lines "
+                f"(source {len(source_lines)}, reference {len(reference_lines)})."
+            )
+            return render_template("human_eval_new_project.html", form_state=form_state)
+    else:
+        reference_lines = ["" for _ in source_lines]
 
     if not source_lines:
         flash("Source TXT does not contain any lines.")

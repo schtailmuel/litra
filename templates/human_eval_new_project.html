@@ -3,7 +3,7 @@
   <div class="page-head">
     <div>
       <h1>New Human Evaluation Project</h1>
-      <p>Upload aligned TXT files: source, reference, and model outputs.</p>
+      <p>Upload aligned TXT files: source, optional reference, and model outputs.</p>
     </div>
     <a class="button secondary" href="{{ url_for('human_evaluation_dashboard') }}">Back</a>
   </div>
@@ -32,8 +32,8 @@
       </label>
 
       <label>
-        Reference TXT (one reference translation per line)
-        <input name="reference_txt" type="file" accept=".txt,text/plain" required>
+        Reference TXT (optional, one reference translation per line)
+        <input name="reference_txt" type="file" accept=".txt,text/plain">
       </label>
 
       <label>
@@ -42,7 +42,7 @@
       </label>
 
       <p class="form-note">
-        Every file must have the same number of lines. Model names are derived from filenames.
+        Source and model files must have the same number of lines. If provided, reference lines must also match source lines. Model names are derived from filenames.
       </p>
 
       <button type="submit">Create Project</button>

@@ -32,7 +32,7 @@ The application is designed for dataset work where every source segment can have
 4. Add target languages or upload existing translations.
 5. Create translator, creator, and reviewer links.
 6. Translators claim texts automatically, edit drafts, submit translations, and add comments or source flags.
-7. Optionally run human evaluation: upload source/reference/model TXT files, create evaluator links, and collect blind rankings with annotations.
+7. Optionally run human evaluation: upload source/model TXT files (and optional reference TXT), create evaluator links, and collect blind rankings with annotations.
 8. Reviewers inspect translations across languages, edit translations, and mark rows as reviewed.
 9. Managers filter project data, batch-update statuses, and export JSONL, TXT, or DOCX outputs.
 
@@ -44,7 +44,7 @@ blind model comparison.
 How it works:
 
 1. Open **Human Evaluation** and create a new project.
-2. Upload one TXT for source sentences, one TXT for references, and one TXT per model output.
+2. Upload one TXT for source sentences, optionally one TXT for references, and one TXT per model output.
 3. Create evaluator links with credit limits.
 4. Evaluators receive random unseen items, rank blind translations, mark source/target spans, and add comments.
 5. Managers can monitor live average ranks, inspect model comments, list/edit/delete annotation entries, and download all annotations as JSON.

@@ -305,6 +305,67 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     assert remaining_my_ratings == 0
 
 
+def test_human_evaluation_project_allows_missing_reference(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("manager", "hash", litra_app.now_iso()),
+        )
+        user_id = conn.execute("SELECT id FROM users WHERE username = ?", ("manager",)).fetchone()["id"]
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = user_id
+
+    response = client.post(
+        "/human-evaluation/new",
+        data={
+            "name": "Eval without refs",
+            "source_language": "German",
+            "target_language": "English",
+            "source_txt": (BytesIO("Hallo\nTschüss\n".encode("utf-8")), "source.txt"),
+            "model_files": [
+                (BytesIO("Hello\nBye\n".encode("utf-8")), "model-a.txt"),
+                (BytesIO("Hi\nGoodbye\n".encode("utf-8")), "model-b.txt"),
+            ],
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 302
+    assert "/human-evaluation/" in response.headers["Location"]
+
+    with litra_app.db() as conn:
+        project = conn.execute("SELECT * FROM human_eval_projects WHERE owner_id = ?", (user_id,)).fetchone()
+        assert project is not None
+        item = conn.execute(
+            "SELECT * FROM human_eval_items WHERE project_id = ? ORDER BY ordinal LIMIT 1",
+            (project["id"],),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO human_eval_links
+                (project_id, token, evaluator_name, credit_limit, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (project["id"], "eval-token-empty-ref", "Eva", 5, litra_app.now_iso()),
+        )
+        conn.commit()
+
+    assert item["reference_text"] == ""
+
+    evaluator_page = client.get("/he/eval-token-empty-ref")
+    assert evaluator_page.status_code == 200
+    assert b"No reference provided." in evaluator_page.data
+
+
 def test_project_access_sharing_and_dashboards(monkeypatch, tmp_path):
     litra_app = importlib.import_module("app")
     monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
