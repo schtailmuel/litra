@@ -1,5 +1,6 @@
 import importlib
 import json
+import zipfile
 from io import BytesIO
 
 
@@ -542,3 +543,126 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
     assert len(lines) == 1
     payload = json.loads(lines[0])
     assert payload["identifier"] == "msg-1"
+
+
+def test_export_docx_includes_thread_comments(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("owner",),
+        ).fetchone()["id"]
+
+        project_id = conn.execute(
+            """
+            INSERT INTO projects (owner_id, name, source_language, source_editable, import_mapping, created_at)
+            VALUES (?, ?, ?, 1, '{}', ?)
+            """,
+            (owner_id, "DOCX Export", "English", litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO project_languages (project_id, target_language, created_at) VALUES (?, ?, ?)",
+            (project_id, "German", litra_app.now_iso()),
+        )
+        segment_id = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project_id,
+                "msg-1",
+                1,
+                "English",
+                "Hello world",
+                "",
+                "{}",
+                litra_app.now_iso(),
+            ),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO translations
+                (segment_id, target_language, target_text, comment, status, qa_warnings, version, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                segment_id,
+                "German",
+                "Hallo Welt",
+                "Summary comment",
+                "submitted",
+                "[]",
+                1,
+                "translator",
+                litra_app.now_iso(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO translation_comments
+                (segment_id, target_language, role, body, resolved, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                segment_id,
+                "German",
+                "reviewer",
+                "Needs tone adjustment",
+                0,
+                "reviewer",
+                litra_app.now_iso(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO translation_comments
+                (segment_id, target_language, role, body, resolved, created_by, created_at, resolved_by, resolved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                segment_id,
+                "German",
+                "manager",
+                "Looks good now",
+                1,
+                "manager",
+                litra_app.now_iso(),
+                "manager",
+                litra_app.now_iso(),
+            ),
+        )
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = owner_id
+
+    response = client.post(
+        f"/projects/{project_id}/export-docx",
+        data={"languages": ["German"]},
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.mimetype
+        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+    with zipfile.ZipFile(BytesIO(response.data)) as archive:
+        document_xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Thread comments:" in document_xml
+    assert "Needs tone adjustment" in document_xml
+    assert "Looks good now" in document_xml

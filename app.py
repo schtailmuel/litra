@@ -4204,16 +4204,16 @@ def docx_section_break(header_rid=None, footer_rid=None, next_page=False):
 
 
 DOCX_LANGUAGE_COLORS = [
-    "1F4E79",
-    "8A3FFC",
-    "00856F",
-    "B45309",
-    "B91C1C",
-    "4F46E5",
-    "0F766E",
-    "A21CAF",
-    "92400E",
-    "0369A1",
+    "1E3A8A",  # Deep Royal Blue
+    "6B21A8",  # Deep Purple
+    "065F46",  # Deep Emerald Green
+    "9A3412",  # Rust / Dark Terracotta
+    "991B1B",  # Dark Crimson
+    "3730A3",  # Deep Indigo
+    "115E59",  # Dark Teal
+    "86198F",  # Deep Magenta/Plum
+    "78350F",  # Dark Bronze/Amber
+    "075985",  # Deep Ocean Blue
 ]
 
 
@@ -4260,6 +4260,53 @@ def docx_language_cell(item, width):
                 spacing_after=80,
             )
         )
+    thread_comments = item.get("thread_comments") or []
+    if thread_comments:
+        paragraphs.append(
+            docx_paragraph(
+                "Thread comments:",
+                bold=True,
+                color=color,
+                spacing_before=80,
+                spacing_after=40,
+            )
+        )
+        for index, comment in enumerate(thread_comments):
+            status_label = "Resolved" if comment.get("resolved") else "Open"
+            role_label = str(comment.get("role") or "comment").title()
+            header_bits = [f"{role_label} ({status_label})"]
+            if comment.get("created_by"):
+                header_bits.append(str(comment["created_by"]))
+            if comment.get("created_at"):
+                header_bits.append(str(comment["created_at"]))
+            paragraphs.append(
+                docx_paragraph(
+                    " · ".join(header_bits),
+                    bold=True,
+                    color=color,
+                    spacing_before=40,
+                    spacing_after=40,
+                )
+            )
+            paragraphs.extend(markdown_to_docx_paragraphs(comment.get("body", ""), color=color))
+            if comment.get("resolved") and (
+                comment.get("resolved_by") or comment.get("resolved_at")
+            ):
+                resolved_bits = ["Resolved"]
+                if comment.get("resolved_by"):
+                    resolved_bits.append(f"by {comment['resolved_by']}")
+                if comment.get("resolved_at"):
+                    resolved_bits.append(f"at {comment['resolved_at']}")
+                paragraphs.append(
+                    docx_paragraph(
+                        " ".join(resolved_bits),
+                        color=color,
+                        spacing_before=40,
+                        spacing_after=40,
+                    )
+                )
+            if index < len(thread_comments) - 1:
+                paragraphs.append(docx_blank_paragraphs(1))
     return docx_cell(paragraphs, width=str(width))
 
 
@@ -4286,6 +4333,16 @@ def docx_language_grid(items, label_prefix=""):
             pieces.append(docx_blank_paragraphs(1))
     return "".join(pieces)
 
+def docx_horizontal_rule():
+    return (
+        '<w:p>'
+          '<w:pPr>'
+            '<w:pBdr>'
+              '<w:bottom w:val="single" w:sz="6" w:space="1" w:color="CCCCCC"/>'
+            '</w:pBdr>'
+          '</w:pPr>'
+        '</w:p>'
+    )
 
 def build_project_docx(project, segments, selected_languages):
     doc_rels = []
@@ -4347,46 +4404,113 @@ def build_project_docx(project, segments, selected_languages):
     for segment in segments:
         sources = segment.get("sources", [])
         translations = segment.get("translations", [])
+
+        # Assign colors to each item
         for item in [*sources, *translations]:
             item["color"] = language_colors.get(
                 str(item.get("language") or "").lower(),
                 docx_language_color(item.get("language")),
             )
+
         block = [docx_paragraph(f"ID: {segment['identifier']}", bold=True)]
 
-        if len(sources) == 1 and len(translations) == 1:
-            block.append(docx_language_meta(sources[0], label_prefix="Source: "))
-            block.append(docx_language_meta(translations[0], label_prefix="Translation: "))
-            block.append(
-                docx_table(
-                    [
-                        docx_row(
-                            [
-                                docx_language_cell(sources[0], 4680),
-                                docx_language_cell(translations[0], 4680),
-                            ]
-                        )
-                    ],
-                    column_count=2,
-                    column_widths=["4680", "4680"],
+        # --- Helper to create a 2-row table (Header cells in Row 1, Text cells in Row 2) ---
+        def create_language_table(items, label_prefix=""):
+            if not items:
+                return ""
+            
+            # Width per column (split evenly, assuming ~9360 total printable width in dxa)
+            col_width = str(int(9360 / len(items)))
+            widths = [col_width] * len(items)
+
+            # Row 1: Header Cells (Language Names)
+            header_cells = [
+                docx_cell(
+                    docx_paragraph(
+                        f"{label_prefix}{item.get('language') or ''}",
+                        bold=True,
+                        color=item.get("color"),
+                        spacing_before=40,
+                        spacing_after=40,
+                    ),
+                    width=col_width,
                 )
+                for item in items
+            ]
+
+            # Row 2: Text Content Cells
+            content_cells = [
+                docx_language_cell(item, width=col_width)
+                for item in items
+            ]
+
+            return docx_table(
+                [
+                    docx_row(header_cells),
+                    docx_row(content_cells),
+                ],
+                column_count=len(items),
+                column_widths=widths,
             )
+
+        # Single source + single translation: 1 table with 2 columns
+        if len(sources) == 1 and len(translations) == 1:
+            src = sources[0]
+            trn = translations[0]
+
+            header_row = docx_row(
+                [
+                    docx_cell(
+                        docx_paragraph(
+                            f"{src.get('language')}",
+                            bold=True,
+                            color=src.get("color"),
+                            spacing_before=40,
+                            spacing_after=40,
+                        ),
+                        width="4680",
+                    ),
+                    docx_cell(
+                        docx_paragraph(
+                            f"{trn.get('language')}",
+                            bold=True,
+                            color=trn.get("color"),
+                            spacing_before=40,
+                            spacing_after=40,
+                        ),
+                        width="4680",
+                    ),
+                ]
+            )
+
+            text_row = docx_row(
+                [
+                    docx_language_cell(src, 4680),
+                    docx_language_cell(trn, 4680),
+                ]
+            )
+
+            block.append(docx_table([header_row, text_row], column_count=2, column_widths=["4680", "4680"]))
+
+        # Multiple sources / multiple translations
         else:
-            block.append(docx_paragraph("Sources", bold=True, spacing_before=120, spacing_after=80))
-            block.append(docx_language_grid(sources, label_prefix="Source: "))
-            block.append(docx_blank_paragraphs(1))
-            block.append(
-                docx_paragraph("Translations", bold=True, spacing_before=120, spacing_after=80)
-            )
-            block.append(
-                docx_language_grid(translations, label_prefix="Translation: ")
-            )
+            if sources:
+                block.append(create_language_table(sources, label_prefix=""))
+            if sources and translations:
+                block.append(docx_blank_paragraphs(1))
+            if translations:
+                block.append(create_language_table(translations, label_prefix=""))
+
+        # Horizontal separator line after the segment
+        block.append(docx_horizontal_rule())
+
         segment_blocks.append("".join(block))
 
     for index, block in enumerate(segment_blocks):
         body.append(block)
         if index < len(segment_blocks) - 1:
-            body.append(docx_blank_paragraphs(3))
+            # Reduced spacing between segments since we now have a horizontal line separator
+            body.append(docx_blank_paragraphs(2))
 
     document_xml = (
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
@@ -4525,6 +4649,53 @@ def docx_segments_for_project(conn, project_id, selected_languages, slot_languag
         for row in rows:
             translations_by_segment[row["segment_id"]][target_language] = row
 
+    thread_comments_by_segment = {segment_id: {} for segment_id in segment_ids}
+    if segment_ids and selected_languages:
+        placeholders = ",".join("?" for _ in segment_ids)
+        language_filter = " OR ".join(
+            "lower(target_language) = lower(?)" for _ in selected_languages
+        )
+        comment_rows = conn.execute(
+            f"""
+            SELECT segment_id,
+                   target_language,
+                   role,
+                   body,
+                   resolved,
+                   created_by,
+                   created_at,
+                   resolved_by,
+                   resolved_at,
+                   id
+            FROM translation_comments
+            WHERE segment_id IN ({placeholders})
+              AND ({language_filter})
+            ORDER BY segment_id, created_at, id
+            """,
+            (*segment_ids, *selected_languages),
+        ).fetchall()
+        selected_language_lookup = {
+            str(language).lower(): language for language in selected_languages
+        }
+        for row in comment_rows:
+            language_key = str(row["target_language"] or "").lower()
+            canonical_language = selected_language_lookup.get(language_key)
+            if not canonical_language:
+                continue
+            thread_comments_by_segment.setdefault(row["segment_id"], {}).setdefault(
+                canonical_language, []
+            ).append(
+                {
+                    "role": row["role"],
+                    "body": row["body"],
+                    "resolved": bool(row["resolved"]),
+                    "created_by": row["created_by"],
+                    "created_at": row["created_at"],
+                    "resolved_by": row["resolved_by"],
+                    "resolved_at": row["resolved_at"],
+                }
+            )
+
     docx_segments = []
     for segment in segment_rows:
         seen_sources = {str(segment["source_language"] or "").lower()}
@@ -4564,6 +4735,9 @@ def docx_segments_for_project(conn, project_id, selected_languages, slot_languag
                         translation["target_instructions"] if translation else ""
                     ),
                     "comment": translation["comment"] if translation else "",
+                    "thread_comments": thread_comments_by_segment.get(
+                        segment["id"], {}
+                    ).get(target_language, []),
                     "updated_by": translation["updated_by"] if translation else "",
                     "updated_at": translation["updated_at"] if translation else "",
                 }
