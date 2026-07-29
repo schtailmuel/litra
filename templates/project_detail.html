@@ -151,6 +151,19 @@
     {% endif %}
   </section>
 
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
+        <h2>QA Warnings</h2>
+        <p class="muted">Refresh QA warnings for all translation rows in this project after QA rule updates.</p>
+      </div>
+    </div>
+    <form method="post" onsubmit="return confirm('Recompute QA warnings for all translation rows in this project?');">
+      <input type="hidden" name="action" value="recompute_project_qa">
+      <button type="submit" class="secondary">Recompute Project QA</button>
+    </form>
+  </section>
+
   <datalist id="projectLanguageOptions">
     {% for row in language_rows %}
       <option value="{{ row.target_language }}"></option>

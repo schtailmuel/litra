@@ -422,6 +422,94 @@ def test_project_access_sharing_and_dashboards(monkeypatch, tmp_path):
     assert b"Shared Eval" not in human_eval_dashboard_after.data
 
 
+def test_project_detail_recompute_project_qa(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("owner",),
+        ).fetchone()["id"]
+
+        project_id = conn.execute(
+            """
+            INSERT INTO projects (owner_id, name, source_language, source_editable, import_mapping, created_at)
+            VALUES (?, ?, ?, 1, '{}', ?)
+            """,
+            (owner_id, "QA Refresh", "English", litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO project_languages (project_id, target_language, created_at) VALUES (?, ?, ?)",
+            (project_id, "German", litra_app.now_iso()),
+        )
+        segment_id = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project_id,
+                "seg-1",
+                1,
+                "English",
+                "Line • with (x) and <a>",
+                "",
+                "{}",
+                litra_app.now_iso(),
+            ),
+        ).lastrowid
+
+        conn.execute(
+            """
+            INSERT INTO translations
+                (segment_id, target_language, target_text, comment, status, qa_warnings, version, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                segment_id,
+                "German",
+                "Zeile with (x) and a",
+                "",
+                "submitted",
+                "[]",
+                1,
+                "translator",
+                litra_app.now_iso(),
+            ),
+        )
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = owner_id
+
+    response = client.post(
+        f"/projects/{project_id}",
+        data={"action": "recompute_project_qa"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"QA recomputed for 1 translation row(s)." in response.data
+
+    with litra_app.db() as conn:
+        updated = conn.execute(
+            "SELECT qa_warnings FROM translations WHERE segment_id = ? AND lower(target_language) = lower(?)",
+            (segment_id, "German"),
+        ).fetchone()
+    warning_codes = {item["code"] for item in json.loads(updated["qa_warnings"])}
+    assert "special_symbols" in warning_codes
+
+
 def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_path):
     litra_app = importlib.import_module("app")
     monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
@@ -666,3 +754,31 @@ def test_export_docx_includes_thread_comments(monkeypatch, tmp_path):
     assert "Thread comments:" in document_xml
     assert "Needs tone adjustment" in document_xml
     assert "Looks good now" in document_xml
+
+
+def test_qa_warning_items_detects_special_symbol_count_mismatch(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    warnings = litra_app.qa_warning_items(
+        "Point • value (A) <x> [ok] {n}",
+        "Punkt value (A) x [ok] {n}",
+    )
+
+    warning_codes = {item["code"] for item in warnings}
+    assert "special_symbols" in warning_codes
+
+
+def test_qa_warning_items_accepts_matching_special_symbol_counts(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    warnings = litra_app.qa_warning_items(
+        "Point • value (A) <x> [ok] {n}",
+        "Punkt • wert (A) <x> [ok] {n}",
+    )
+
+    warning_codes = {item["code"] for item in warnings}
+    assert "special_symbols" not in warning_codes

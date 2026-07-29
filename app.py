@@ -3700,6 +3700,25 @@ TRANSLATION_STATUS_LIST = [
     "approved",
 ]
 TRANSLATION_STATUSES = set(TRANSLATION_STATUS_LIST)
+QA_SPECIAL_SYMBOLS = [
+    # Original list
+    "•", ">", "<", "(", ")", "[", "]", "{", "}", "$", "€", "£", "¥", "₹", "₩", "₽", "₱", ":", ";", "?", "!", "\"",
+    
+    # Bullet & Arrow variations
+    "◦", "▪", "▫", "►", "→", "←", "↑", "↓", "⇒",
+    
+    # Typography & Structure
+    "—", "–", "…", "|", "/", "\\", "§", "¶", "*", "†", "‡",
+    
+    # Math & Logic
+    "%", "°", "+", "=", "±", "÷", "×", "≤", "≥", "≠", "≈", "~",
+    
+    # Technical & Identifiers
+    "&", "@", "#", "_", "^", "`",
+    
+    # Legal & Currency
+    "©", "®", "™", "€", "£", "¥", "₹", "₩", "₽", "₱"
+]
 
 
 def normalize_status(status, target_text="", draft_text=""):
@@ -3763,6 +3782,23 @@ def qa_warning_items(source_text, target_text):
     target_headings = len(re.findall(r"(?m)^#{1,6}\s+", target))
     if source_headings != target_headings:
         add("markdown_headings", "Markdown heading count differs")
+
+    symbol_diffs = []
+    for symbol in QA_SPECIAL_SYMBOLS:
+        source_count = source.count(symbol)
+        if not source_count:
+            continue
+        target_count = target.count(symbol)
+        if source_count != target_count:
+            symbol_diffs.append((symbol, source_count, target_count))
+    if symbol_diffs:
+        preview = ", ".join(
+            f"{symbol} {source_count}→{target_count}"
+            for symbol, source_count, target_count in symbol_diffs[:6]
+        )
+        if len(symbol_diffs) > 6:
+            preview += ", ..."
+        add("special_symbols", f"Special symbol count differs: {preview}")
 
     source_words = {
         word.lower()
@@ -6261,6 +6297,27 @@ def project_detail(project_id):
                         target_language=target_language,
                     )
                 )
+
+            if action == "recompute_project_qa":
+                rows = conn.execute(
+                    """
+                    SELECT t.id,
+                           s.source_text,
+                           t.target_text
+                    FROM translations t
+                    JOIN segments s ON s.id = t.segment_id
+                    WHERE s.project_id = ?
+                    """,
+                    (project_id,),
+                ).fetchall()
+                for row in rows:
+                    conn.execute(
+                        "UPDATE translations SET qa_warnings = ? WHERE id = ?",
+                        (qa_warnings_json(row["source_text"], row["target_text"]), row["id"]),
+                    )
+                conn.commit()
+                flash(f"QA recomputed for {len(rows)} translation row(s).")
+                return redirect(url_for("project_detail", project_id=project_id))
 
             if action == "create_reviewer_link":
                 reviewer_name_value = request.form.get("reviewer_name", "").strip()
