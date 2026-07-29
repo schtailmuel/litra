@@ -1803,6 +1803,16 @@ button.danger-text-button:hover {
   border-color: var(--accent);
 }
 
+.text-row.clickable-row {
+  cursor: pointer;
+}
+
+.text-row.clickable-row:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  outline: none;
+}
+
 .text-row span {
   overflow: hidden;
   display: -webkit-box;

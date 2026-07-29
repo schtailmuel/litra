@@ -9,7 +9,7 @@
     <div class="page-actions">
       <a class="button secondary" href="{{ url_for('language_detail', project_id=project.id, target_language=target_language) }}">Back</a>
       <a class="button secondary" href="{{ url_for('language_texts', project_id=project.id, target_language=target_language) }}">Texts</a>
-      <a class="button secondary" href="{{ url_for('language_translation_data_jsonl', project_id=project.id, target_language=target_language, q=filters.q, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Download JSONL</a>
+      <a class="button secondary" href="{{ url_for('language_translation_data_jsonl', project_id=project.id, target_language=target_language, q=filters.q, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Download JSONL</a>
     </div>
   </div>
 
@@ -40,6 +40,15 @@
         <input type="checkbox" name="warnings" value="1" {% if filters.warnings %}checked{% endif %}>
         QA
       </label>
+      <label>
+        QA type
+        <select name="warning_code">
+          <option value="">Any QA warning</option>
+          {% for warning_code, warning_label in QA_WARNING_CODE_OPTIONS %}
+            <option value="{{ warning_code }}" {% if filters.warning_code == warning_code %}selected{% endif %}>{{ warning_label }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <div class="filter-actions">
         <button type="submit">Filter</button>
         <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language) }}">Clear</a>
@@ -61,10 +70,10 @@
       <h2>Rows</h2>
       <div class="pagination">
         {% if page > 1 %}
-          <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language, page=page - 1, q=filters.q, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Previous</a>
+          <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language, page=page - 1, q=filters.q, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Previous</a>
         {% endif %}
         {% if page * per_page < text_count %}
-          <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language, page=page + 1, q=filters.q, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings) }}">Next</a>
+          <a class="button secondary" href="{{ url_for('language_translation_data', project_id=project.id, target_language=target_language, page=page + 1, q=filters.q, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Next</a>
         {% endif %}
       </div>
     </div>

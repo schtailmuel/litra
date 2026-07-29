@@ -3700,6 +3700,18 @@ TRANSLATION_STATUS_LIST = [
     "approved",
 ]
 TRANSLATION_STATUSES = set(TRANSLATION_STATUS_LIST)
+QA_WARNING_CODE_OPTIONS = [
+    ("empty_translation", "Empty translation"),
+    ("row_count", "Row count differs"),
+    ("missing_numbers", "Missing numbers"),
+    ("changed_punctuation", "Changed punctuation"),
+    ("length_ratio", "Unusual length ratio"),
+    ("markdown_links", "Markdown link count differs"),
+    ("markdown_headings", "Markdown heading count differs"),
+    ("special_symbols", "Special symbol count differs"),
+    ("uppercase_text", "Uppercase style mismatch"),
+    ("untranslated_source_words", "Untranslated source words"),
+]
 QA_SPECIAL_SYMBOLS = [
     # Original list
     "•", ">", "<", "(", ")", "[", "]", "{", "}", "$", "€", "£", "¥", "₹", "₩", "₽", "₱", ":", ";", "?", "!", "\"",
@@ -3719,6 +3731,11 @@ QA_SPECIAL_SYMBOLS = [
     # Legal & Currency
     "©", "®", "™", "€", "£", "¥", "₹", "₩", "₽", "₱"
 ]
+
+
+def normalize_qa_warning_code(value):
+    code = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return re.sub(r"[^a-z0-9_]", "", code)
 
 
 def normalize_status(status, target_text="", draft_text=""):
@@ -3800,6 +3817,21 @@ def qa_warning_items(source_text, target_text):
             preview += ", ..."
         add("special_symbols", f"Special symbol count differs: {preview}")
 
+    def is_all_upper_non_punctuation(value):
+        has_letter = False
+        for char in str(value or ""):
+            if char.isalpha():
+                has_letter = True
+                if char != char.upper():
+                    return False
+        return has_letter
+
+    if is_all_upper_non_punctuation(source) and not is_all_upper_non_punctuation(target):
+        add(
+            "uppercase_text",
+            "Source text is uppercase; translation should also be uppercase",
+        )
+
     source_words = {
         word.lower()
         for word in re.findall(r"[A-Za-z][A-Za-z'-]{4,}", source)
@@ -3839,6 +3871,7 @@ app.jinja_env.globals["TRANSLATION_STATUSES"] = TRANSLATION_STATUS_LIST
 
 COMMENT_ROLES = ["translator", "reviewer", "manager"]
 app.jinja_env.globals["COMMENT_ROLES"] = COMMENT_ROLES
+app.jinja_env.globals["QA_WARNING_CODE_OPTIONS"] = QA_WARNING_CODE_OPTIONS
 
 
 def comments_for(conn, segment_id, target_language):
@@ -7500,6 +7533,7 @@ def language_data_filters_from_request(values):
         "missing": values.get("missing", "").strip(),
         "comments": values.get("comments", "").strip(),
         "warnings": values.get("warnings", "").strip(),
+        "warning_code": normalize_qa_warning_code(values.get("warning_code", "")),
     }
 
 
@@ -7550,6 +7584,9 @@ def language_data_where(project_id, filters, target_language=None):
         where.append("(" + " OR ".join(comment_clauses) + ")")
     if filters["warnings"]:
         where.append("COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]')")
+    if filters.get("warning_code"):
+        where.append("replace(lower(COALESCE(t.qa_warnings, '[]')), ' ', '') LIKE ?")
+        params.append(f'%"code":"{filters["warning_code"]}"%')
     return " AND ".join(where), params
 
 
@@ -7591,6 +7628,7 @@ def project_translation_data_filters_from_request(values):
         "missing": values.get("missing", "").strip(),
         "comments": values.get("comments", "").strip(),
         "warnings": values.get("warnings", "").strip(),
+        "warning_code": normalize_qa_warning_code(values.get("warning_code", "")),
     }
 
 
@@ -7642,6 +7680,9 @@ def project_translation_data_where(project_id, filters):
         )
     if filters["warnings"]:
         where.append("COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]')")
+    if filters.get("warning_code"):
+        where.append("replace(lower(COALESCE(t.qa_warnings, '[]')), ' ', '') LIKE ?")
+        params.append(f'%"code":"{filters["warning_code"]}"%')
     return " AND ".join(where), params
 
 
@@ -7693,6 +7734,7 @@ def project_translation_data_redirect(project_id, form):
             missing=form.get("missing", ""),
             comments=form.get("comments", ""),
             warnings=form.get("warnings", ""),
+            warning_code=form.get("warning_code", ""),
         )
     )
 
