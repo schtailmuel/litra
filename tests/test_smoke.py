@@ -366,6 +366,95 @@ def test_human_evaluation_project_allows_missing_reference(monkeypatch, tmp_path
     assert b"No reference provided." in evaluator_page.data
 
 
+def test_human_evaluation_project_can_disable_evaluator_public_stats(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        user_id = conn.execute("SELECT id FROM users WHERE username = ?", ("owner",)).fetchone()["id"]
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = user_id
+
+    create_response = client.post(
+        "/human-evaluation/new",
+        data={
+            "name": "Eval stats toggle",
+            "source_language": "German",
+            "target_language": "English",
+            "source_txt": (BytesIO("Hallo\nTschüss\n".encode("utf-8")), "source.txt"),
+            "model_files": [
+                (BytesIO("Hello\nBye\n".encode("utf-8")), "model-a.txt"),
+                (BytesIO("Hi\nGoodbye\n".encode("utf-8")), "model-b.txt"),
+            ],
+        },
+        content_type="multipart/form-data",
+    )
+    assert create_response.status_code == 302
+
+    with litra_app.db() as conn:
+        project = conn.execute("SELECT * FROM human_eval_projects WHERE owner_id = ?", (user_id,)).fetchone()
+        assert project is not None
+        conn.execute(
+            """
+            INSERT INTO human_eval_links
+                (project_id, token, evaluator_name, credit_limit, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (project["id"], "eval-token-stats-toggle", "Eva", 5, litra_app.now_iso()),
+        )
+        conn.commit()
+
+    initial_evaluator_page = client.get("/he/eval-token-stats-toggle")
+    assert initial_evaluator_page.status_code == 200
+    assert b"Public Stats" in initial_evaluator_page.data
+
+    initial_stats_page = client.get("/he/eval-token-stats-toggle/stats")
+    assert initial_stats_page.status_code == 200
+    initial_stats_api = client.get("/api/he/eval-token-stats-toggle/stats")
+    assert initial_stats_api.status_code == 200
+
+    disable_response = client.post(
+        f"/human-evaluation/{project['id']}",
+        data={
+            "action": "update_public_stats_visibility",
+            "evaluator_public_stats_enabled": "0",
+        },
+    )
+    assert disable_response.status_code == 302
+
+    with litra_app.db() as conn:
+        updated_project = conn.execute(
+            "SELECT evaluator_public_stats_enabled FROM human_eval_projects WHERE id = ?",
+            (project["id"],),
+        ).fetchone()
+    assert updated_project["evaluator_public_stats_enabled"] == 0
+
+    evaluator_page_after_disable = client.get("/he/eval-token-stats-toggle")
+    assert evaluator_page_after_disable.status_code == 200
+    assert b"Public Stats" not in evaluator_page_after_disable.data
+
+    stats_page_after_disable = client.get("/he/eval-token-stats-toggle/stats")
+    assert stats_page_after_disable.status_code == 302
+    assert stats_page_after_disable.headers["Location"].endswith("/he/eval-token-stats-toggle")
+
+    stats_api_after_disable = client.get("/api/he/eval-token-stats-toggle/stats")
+    assert stats_api_after_disable.status_code == 403
+    stats_api_payload = stats_api_after_disable.get_json()
+    assert stats_api_payload["status"] == "error"
+    assert "disabled" in stats_api_payload["message"].lower()
+
+
 def test_project_access_sharing_and_dashboards(monkeypatch, tmp_path):
     litra_app = importlib.import_module("app")
     monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")

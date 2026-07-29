@@ -9,7 +9,9 @@
     <div class="page-actions">
       <a class="button secondary" href="{{ url_for('human_evaluation_rated_items', token=link.token) }}">My Graded Sentences</a>
       <a class="button secondary" href="{{ url_for('human_evaluation_download_my_annotations', token=link.token) }}">Download My Annotations</a>
-      <a class="button secondary" href="{{ url_for('human_evaluation_public_stats', token=link.token) }}">Public Stats</a>
+      {% if link.evaluator_public_stats_enabled %}
+        <a class="button secondary" href="{{ url_for('human_evaluation_public_stats', token=link.token) }}">Public Stats</a>
+      {% endif %}
     </div>
     <div class="overview-grid compact-overview eval-progress">
       <div><strong>{{ used_credits }}</strong><span>used</span></div>

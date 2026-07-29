@@ -25,6 +25,33 @@
   <section class="form-panel section-gap">
     <div class="page-head compact-head">
       <div>
+        <h2>Evaluator Public Stats</h2>
+        <p class="muted">Control whether evaluator links can open the public stats page.</p>
+      </div>
+    </div>
+    {% if can_manage_access %}
+      <form method="post" class="inline-form">
+        <input type="hidden" name="action" value="update_public_stats_visibility">
+        <label>
+          Public stats visibility
+          <select name="evaluator_public_stats_enabled">
+            <option value="1" {% if project.evaluator_public_stats_enabled %}selected{% endif %}>Enabled</option>
+            <option value="0" {% if not project.evaluator_public_stats_enabled %}selected{% endif %}>Disabled</option>
+          </select>
+        </label>
+        <button type="submit">Save</button>
+      </form>
+    {% else %}
+      <p class="muted">
+        Evaluator public stats are currently
+        <strong>{{ "enabled" if project.evaluator_public_stats_enabled else "disabled" }}</strong>.
+      </p>
+    {% endif %}
+  </section>
+
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
         <h2>Project Access</h2>
         <p class="muted">Invite other accounts by username to access this evaluation project.</p>
       </div>
@@ -125,7 +152,11 @@
             </label>
             <div class="link-actions">
               <a class="button secondary" href="{{ eval_url }}">Open</a>
-              <a class="button secondary" href="{{ url_for('human_evaluation_public_stats', token=link.token) }}">Public Stats</a>
+              {% if project.evaluator_public_stats_enabled %}
+                <a class="button secondary" href="{{ url_for('human_evaluation_public_stats', token=link.token) }}">Public Stats</a>
+              {% else %}
+                <span class="muted">Public stats disabled</span>
+              {% endif %}
               <form method="post" onsubmit="return confirm('Remove this evaluator link? Existing evaluations stay saved.');">
                 <input type="hidden" name="action" value="revoke_evaluator_link">
                 <input type="hidden" name="link_id" value="{{ link.id }}">

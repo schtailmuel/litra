@@ -661,6 +661,7 @@ def init_postgres_schema(conn):
             name TEXT NOT NULL,
             source_language TEXT NOT NULL,
             target_language TEXT NOT NULL,
+            evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         )
         """
@@ -753,6 +754,10 @@ def init_postgres_schema(conn):
     conn.execute(
         "ALTER TABLE IF EXISTS human_eval_rankings "
         "DROP CONSTRAINT IF EXISTS human_eval_rankings_rating_id_rank_value_key"
+    )
+    conn.execute(
+        "ALTER TABLE IF EXISTS human_eval_projects "
+        "ADD COLUMN IF NOT EXISTS evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1"
     )
     create_hot_indexes(conn)
 
@@ -970,6 +975,7 @@ def init_db():
                 name TEXT NOT NULL,
                 source_language TEXT NOT NULL,
                 target_language TEXT NOT NULL,
+                evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL
             );
 
@@ -1209,10 +1215,19 @@ def migrate_schema(conn):
             name TEXT NOT NULL,
             source_language TEXT NOT NULL,
             target_language TEXT NOT NULL,
+            evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         )
         """
     )
+    human_eval_project_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(human_eval_projects)")
+    }
+    if "evaluator_public_stats_enabled" not in human_eval_project_columns:
+        conn.execute(
+            "ALTER TABLE human_eval_projects "
+            "ADD COLUMN evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1"
+        )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS human_eval_project_access (
@@ -2674,6 +2689,7 @@ def human_eval_link_for_token(conn, token):
                hp.name AS project_name,
                hp.source_language,
                hp.target_language,
+               hp.evaluator_public_stats_enabled,
                hp.owner_id
         FROM human_eval_links hel
         JOIN human_eval_projects hp ON hp.id = hel.project_id
@@ -2682,6 +2698,16 @@ def human_eval_link_for_token(conn, token):
         """,
         (token,),
     ).fetchone()
+
+
+def human_eval_public_stats_enabled(link):
+    if not link:
+        return False
+    try:
+        raw = link["evaluator_public_stats_enabled"]
+    except (KeyError, TypeError, IndexError):
+        raw = 0
+    return bool_int(raw) == 1
 
 
 def human_eval_error_span_summary(raw):
@@ -5225,6 +5251,33 @@ def human_evaluation_project_detail(eval_project_id):
                     url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
                 )
 
+            if action == "update_public_stats_visibility":
+                if not can_manage_access:
+                    flash("Only the project owner can change public stats settings.")
+                    return redirect(
+                        url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                    )
+                evaluator_public_stats_enabled = (
+                    1 if request.form.get("evaluator_public_stats_enabled") == "1" else 0
+                )
+                conn.execute(
+                    """
+                    UPDATE human_eval_projects
+                       SET evaluator_public_stats_enabled = ?
+                     WHERE id = ?
+                    """,
+                    (evaluator_public_stats_enabled, eval_project_id),
+                )
+                conn.commit()
+                flash(
+                    "Evaluator public stats enabled."
+                    if evaluator_public_stats_enabled
+                    else "Evaluator public stats disabled."
+                )
+                return redirect(
+                    url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                )
+
             if action == "create_evaluator_link":
                 evaluator_name = request.form.get("evaluator_name", "").strip()
                 if not evaluator_name:
@@ -5504,6 +5557,11 @@ def human_evaluation_public_stats_api(token):
         link = human_eval_link_for_token(conn, token)
         if not link:
             abort(404)
+        if not human_eval_public_stats_enabled(link):
+            return (
+                jsonify({"status": "error", "message": "Public stats are disabled for this project."}),
+                403,
+            )
         payload = human_eval_analytics_payload(conn, link["project_id"])
     return jsonify(
         {
@@ -9638,6 +9696,9 @@ def human_evaluation_public_stats(token):
         link = human_eval_link_for_token(conn, token)
         if not link:
             abort(404)
+        if not human_eval_public_stats_enabled(link):
+            flash("Public stats are disabled for this project.")
+            return redirect(url_for("human_evaluation", token=token))
         analytics_payload = human_eval_analytics_payload(conn, link["project_id"])
 
     return render_template(
