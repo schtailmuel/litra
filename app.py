@@ -4303,79 +4303,68 @@ def docx_language_meta(item, label_prefix=""):
         parts.append(f"Updated: {item['updated_at']}")
     return docx_paragraph(" | ".join(parts), bold=True, color=color, spacing_after=80)
 
+def docx_external_comments_block(item):
+    language = item.get("language") or "Unknown"
+    color = "auto"
+    paragraphs = []
 
-def docx_language_cell(item, width):
-    language = item.get("language") or ""
-    color = item.get("color") or docx_language_color(language)
-    paragraphs = [
-        *markdown_to_docx_paragraphs(item.get("text", ""), color=color),
-        docx_blank_paragraphs(1),
-    ]
+    # 1. Instructions
     if item.get("instructions"):
+        paragraphs.append(docx_blank_paragraphs(1))
         paragraphs.append(
             docx_paragraph(
-                f"Instructions: {item['instructions']}",
-                color=color,
-                spacing_before=80,
-                spacing_after=80,
-            )
-        )
-    if item.get("comment"):
-        paragraphs.append(
-            docx_paragraph(
-                f"Comment: {item['comment']}",
-                color=color,
-                spacing_before=80,
-                spacing_after=80,
-            )
-        )
-    thread_comments = item.get("thread_comments") or []
-    if thread_comments:
-        paragraphs.append(
-            docx_paragraph(
-                "Thread comments:",
-                bold=True,
+                f"Instructions ({language}): {item['instructions']}",
                 color=color,
                 spacing_before=80,
                 spacing_after=40,
             )
         )
-        for index, comment in enumerate(thread_comments):
-            status_label = "Resolved" if comment.get("resolved") else "Open"
-            role_label = str(comment.get("role") or "comment").title()
-            header_bits = [f"{role_label} ({status_label})"]
-            if comment.get("created_by"):
-                header_bits.append(str(comment["created_by"]))
-            if comment.get("created_at"):
-                header_bits.append(str(comment["created_at"]))
-            paragraphs.append(
-                docx_paragraph(
-                    " · ".join(header_bits),
-                    bold=True,
-                    color=color,
-                    spacing_before=40,
-                    spacing_after=40,
-                )
+
+    # 2. General Comment
+    if item.get("comment"):
+        paragraphs.append(docx_blank_paragraphs(1))
+        paragraphs.append(
+            docx_paragraph(
+                f"{item['comment']}",
+                color=color,
+                spacing_before=80,
+                spacing_after=40,
             )
+        )
+
+    # 3. Thread Comments (without author and without date)
+    thread_comments = item.get("thread_comments") or []
+    if thread_comments:
+        paragraphs.append(docx_blank_paragraphs(1))
+        for index, comment in enumerate(thread_comments):
+                        
+            # Comment body
             paragraphs.extend(markdown_to_docx_paragraphs(comment.get("body", ""), color=color))
-            if comment.get("resolved") and (
-                comment.get("resolved_by") or comment.get("resolved_at")
-            ):
-                resolved_bits = ["Resolved"]
-                if comment.get("resolved_by"):
-                    resolved_bits.append(f"by {comment['resolved_by']}")
-                if comment.get("resolved_at"):
-                    resolved_bits.append(f"at {comment['resolved_at']}")
+            
+            # Resolved status (without resolved_by or resolved_at)
+            if comment.get("resolved"):
                 paragraphs.append(
                     docx_paragraph(
-                        " ".join(resolved_bits),
+                        "Resolved",
                         color=color,
                         spacing_before=40,
                         spacing_after=40,
                     )
                 )
+                
             if index < len(thread_comments) - 1:
                 paragraphs.append(docx_blank_paragraphs(1))
+
+    return paragraphs
+
+def docx_language_cell(item, width):
+    color = item.get("color") or docx_language_color(item.get("language") or "")
+    
+    # Render main text content inside the table cell
+    paragraphs = [
+        *markdown_to_docx_paragraphs(item.get("text", ""), color=color),
+    ]
+    
     return docx_cell(paragraphs, width=str(width))
 
 
@@ -4569,6 +4558,12 @@ def build_project_docx(project, segments, selected_languages):
                 block.append(docx_blank_paragraphs(1))
             if translations:
                 block.append(create_language_table(translations, label_prefix=""))
+
+        # 2. Append instructions, general comments, and thread comments below the table
+        for item in [*sources, *translations]:
+            comment_paragraphs = docx_external_comments_block(item)
+            if comment_paragraphs:
+                block.extend(comment_paragraphs)
 
         # Horizontal separator line after the segment
         block.append(docx_horizontal_rule())
