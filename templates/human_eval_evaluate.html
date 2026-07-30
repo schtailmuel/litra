@@ -15,7 +15,7 @@
       <p>{{ link.source_language }} &rarr; {{ link.target_language }} &middot; Evaluator: {{ link.evaluator_name or "evaluator" }}</p>
     </div>
     <div class="page-actions">
-      <a class="button secondary" href="{{ url_for('human_evaluation_rated_items', token=link.token) }}">My Graded Sentences</a>
+      <a class="button secondary" href="{{ url_for('human_evaluation_rated_items', token=link.token) }}">My Submissions</a>
       <a class="button secondary" href="{{ url_for('human_evaluation_download_my_annotations', token=link.token) }}">Download My Annotations</a>
       {% if link.evaluator_public_stats_enabled %}
         <a class="button secondary" href="{{ url_for('human_evaluation_public_stats', token=link.token) }}">Public Stats</a>

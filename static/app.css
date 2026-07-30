@@ -3765,10 +3765,15 @@ button.danger-text-button:hover {
 }
 
 .eval-comment-modal {
+  display: none;
   width: min(40rem, 92vw);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 0;
+}
+
+.eval-comment-modal[open] {
+  display: block;
 }
 
 .eval-comment-modal::backdrop {
