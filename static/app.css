@@ -1771,6 +1771,62 @@ button.danger-text-button:hover {
   gap: 0.5rem;
 }
 
+.pagination .is-current {
+  border-color: var(--accent);
+  background: #eff6ff;
+  color: #111827;
+  pointer-events: none;
+}
+
+.pagination-gap {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.eval-item-data-table-wrap {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.eval-item-data-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.eval-item-data-table th,
+.eval-item-data-table td {
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  vertical-align: top;
+  background: #fff;
+}
+
+.eval-item-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.eval-item-data-table textarea {
+  width: min(30rem, 100%);
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.eval-item-data-actions {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 8rem;
+}
+
 .text-table {
   display: grid;
   gap: 0.35rem;
@@ -3253,6 +3309,164 @@ button.danger-text-button:hover {
   margin-bottom: 1rem;
 }
 
+.eval-document-layout {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.9fr) minmax(0, 1.45fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.eval-document-left {
+  position: sticky;
+  top: 0.55rem;
+  z-index: 20;
+  display: grid;
+  gap: 0.85rem;
+  max-height: calc(100vh - 1.2rem);
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.eval-document-left .source-box.unframed {
+  max-height: min(43vh, 23rem);
+  overflow: auto;
+}
+
+.eval-document-source-panel {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.eval-panel-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.eval-panel-tab {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-width: 9rem;
+}
+
+.eval-panel-tab.active {
+  border-color: var(--accent);
+  background: #eff6ff;
+  color: #111827;
+}
+
+.eval-panel-tab-content {
+  display: grid;
+}
+
+.eval-panel-pane {
+  margin: 0;
+}
+
+.eval-document-right {
+  min-width: 0;
+}
+
+.eval-document-ranking-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.eval-target-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+
+.eval-target-tab {
+  --eval-rank-color: #94a3b8;
+  min-width: 8.5rem;
+  display: grid;
+  gap: 0.12rem;
+  justify-items: start;
+  align-content: center;
+  border-color: color-mix(in srgb, var(--eval-rank-color) 40%, var(--line));
+  background: color-mix(in srgb, var(--eval-rank-color) 9%, #ffffff);
+  cursor: grab;
+}
+
+.eval-target-tab:active {
+  cursor: grabbing;
+}
+
+.eval-target-tab.active {
+  border-color: var(--eval-rank-color);
+  background: color-mix(in srgb, var(--eval-rank-color) 20%, #ffffff);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--eval-rank-color) 45%, transparent);
+}
+
+.eval-target-tab-title {
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.eval-target-tab-rank {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.eval-target-tab[data-tie="1"] .eval-target-tab-rank {
+  color: #b45309;
+}
+
+.eval-document-ranking-panel .eval-rank-table {
+  margin: 0;
+}
+
+.eval-document-rank-table-head,
+.eval-document-rank-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.eval-document-rank-table-head {
+  display: none;
+}
+
+.eval-row-output-cell.eval-document-output-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.eval-row-output-cell.eval-document-output-cell .eval-target-annotator {
+  display: block;
+  margin: 0;
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.eval-document-output-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  margin-top: 0.2rem;
+}
+
+.eval-document-ranking-panel .eval-rank-table-body {
+  max-height: min(72vh, 56rem);
+  overflow: auto;
+  padding-right: 0.1rem;
+}
+
+.eval-document-ranking-panel .editor-actions {
+  position: sticky;
+  bottom: 0;
+  padding-top: 0.55rem;
+  margin-top: 0.2rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #ffffff 28%);
+}
+
 .eval-source-reference-sticky .form-panel {
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
 }
@@ -3282,8 +3496,8 @@ button.danger-text-button:hover {
   gap: 0.45rem;
 }
 
-.eval-rank-table-head,
-.eval-rank-table-row {
+.eval-rank-table-head:not(.eval-document-rank-table-head),
+.eval-rank-table-row:not(.eval-document-rank-row) {
   display: grid;
   grid-template-columns: minmax(50%, 1fr) minmax(14rem, 0.7fr);
   align-items: start;
@@ -3305,6 +3519,10 @@ button.danger-text-button:hover {
   border-left: 0.4rem solid var(--eval-rank-color);
   border-radius: 8px;
   background: linear-gradient(120deg, var(--eval-rank-fill) 0%, #fff 60%);
+}
+
+.eval-rank-table-row[hidden] {
+  display: none !important;
 }
 
 .eval-row-output-cell {
@@ -3775,8 +3993,8 @@ button.danger-text-button:hover {
     grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
   }
 
-  .eval-rank-table-head,
-  .eval-rank-table-row {
+  .eval-rank-table-head:not(.eval-document-rank-table-head),
+  .eval-rank-table-row:not(.eval-document-rank-row) {
     grid-template-columns: minmax(48%, 1fr) minmax(12.5rem, 0.72fr);
   }
 }
@@ -3803,6 +4021,33 @@ button.danger-text-button:hover {
     position: static;
   }
 
+  .eval-document-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .eval-document-left {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .eval-document-ranking-panel .eval-rank-table-body {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .eval-target-tabs {
+    flex-wrap: nowrap;
+    overflow: auto;
+    padding-bottom: 0.2rem;
+  }
+
+  .eval-target-tab {
+    flex: 0 0 auto;
+  }
+
   .eval-source-reference-sticky .source-box.unframed {
     max-height: none;
     overflow: visible;
@@ -3810,8 +4055,8 @@ button.danger-text-button:hover {
 }
 
 @media (max-width: 980px) {
-  .eval-rank-table-head,
-  .eval-rank-table-row {
+  .eval-rank-table-head:not(.eval-document-rank-table-head),
+  .eval-rank-table-row:not(.eval-document-rank-row) {
     grid-template-columns: minmax(0, 1fr) minmax(10.5rem, 0.85fr);
   }
 }
@@ -3831,10 +4076,18 @@ button.danger-text-button:hover {
     display: none;
   }
 
-  .eval-rank-table-row {
+  .eval-rank-table-row:not(.eval-document-rank-row) {
     grid-template-columns: 1fr;
     align-items: start;
     row-gap: 0.45rem;
+  }
+
+  .eval-panel-tabs {
+    flex-direction: column;
+  }
+
+  .eval-target-tab {
+    min-width: 7.25rem;
   }
 
   .eval-row-controls-line {

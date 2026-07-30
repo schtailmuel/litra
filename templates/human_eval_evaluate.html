@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% block main_class %}page page-wide{% endblock %}
 {% block content %}
+  {% if item %}
+    {% set table_view_url = url_for('human_evaluation', token=link.token, item=item.id, layout='table') %}
+    {% set document_view_url = url_for('human_evaluation', token=link.token, item=item.id, layout='document') %}
+  {% else %}
+    {% set table_view_url = url_for('human_evaluation', token=link.token, layout='table') %}
+    {% set document_view_url = url_for('human_evaluation', token=link.token, layout='document') %}
+  {% endif %}
+
   <div class="page-head">
     <div>
       <h1>{{ link.project_name }}</h1>
@@ -21,26 +29,6 @@
     </div>
   </div>
 
-  <section class="form-panel eval-guidance-panel section-gap">
-    <h2>How to annotate</h2>
-    <p class="muted">
-      Click a translation row to make it active, then click a source word to start and click another source word to finish a source-side error span (untranslated, mistranslated, or wrong translation).
-    </p>
-    <p class="muted">
-      In the table, click words in output text to mark style spans. Use rank buttons for ties, or drag rows by handle to enforce strict order.
-    </p>
-    <p class="muted">
-      Use the note button on each marked span to explain why it was marked.
-    </p>
-    <p id="evalInteractionFeedback" class="form-note">Tip: click a row to activate source-side marking for that translation.</p>
-    <div class="editor-actions eval-ranking-actions">
-      <button type="button" class="secondary" data-action="auto-rank">Suggest Auto Rank</button>
-    </div>
-    {% if is_revisit %}
-      <p class="form-note">You are revisiting a previously ranked source sentence. Saving updates your earlier ranking.</p>
-    {% endif %}
-  </section>
-
   {% if done_reason == "limit" %}
     <section class="form-panel">
       <h2>Credit Limit Reached</h2>
@@ -52,77 +40,160 @@
       <p>You have already evaluated all available items for this project. Thank you.</p>
     </section>
   {% elif item %}
-    <form method="post" class="stack section-gap">
-      <section class="split eval-source-reference-sticky">
-        <div class="form-panel">
-          <h2>Source #{{ item.ordinal }}</h2>
-          <div class="source-box unframed">
-            <div id="evalSourceAnnotator" class="eval-source-annotator">{{ item.source_text }}</div>
-          </div>
-        </div>
-        <div class="form-panel">
-          <h2>Reference</h2>
-          <div class="source-box unframed">
-            <pre id="evalReferenceText" class="eval-text">{{ item.reference_text or "No reference provided." }}</pre>
-          </div>
-        </div>
-      </section>
+    <form method="post" class="stack section-gap{% if eval_layout == 'document' %} eval-document-form{% endif %}">
+      <input type="hidden" name="eval_layout" value="{{ eval_layout }}">
+      <input type="hidden" name="eval_layout_override" value="{{ '1' if eval_layout_is_override else '0' }}">
 
-      <section class="form-panel">
+      {% if eval_layout == "document" %}
+        <section class="eval-document-layout">
+          <div class="eval-document-left">
+            <div class="form-panel eval-document-source-panel">
+              <div class="eval-panel-tabs" data-source-tabs role="tablist" aria-label="Source and reference views">
+                <button
+                  type="button"
+                  class="secondary eval-panel-tab active"
+                  data-source-tab="source"
+                  aria-selected="true"
+                  aria-controls="evalSourcePane"
+                >
+                  Source #{{ item.ordinal }}
+                </button>
+                <button
+                  type="button"
+                  class="secondary eval-panel-tab"
+                  data-source-tab="reference"
+                  aria-selected="false"
+                  aria-controls="evalReferencePane"
+                >
+                  Reference
+                </button>
+              </div>
+              <div class="eval-panel-tab-content">
+                <div id="evalSourcePane" class="source-box unframed eval-panel-pane" data-source-pane="source">
+                  <div id="evalSourceAnnotator" class="eval-source-annotator">{{ item.source_text }}</div>
+                </div>
+                <div id="evalReferencePane" class="source-box unframed eval-panel-pane" data-source-pane="reference" hidden>
+                  <pre id="evalReferenceText" class="eval-text">{{ item.reference_text or "No reference provided." }}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="eval-document-right">
+      {% else %}
+        <section class="split eval-source-reference-sticky">
+          <div class="form-panel">
+            <h2>Source #{{ item.ordinal }}</h2>
+            <div class="source-box unframed">
+              <div id="evalSourceAnnotator" class="eval-source-annotator">{{ item.source_text }}</div>
+            </div>
+          </div>
+          <div class="form-panel">
+            <h2>Reference</h2>
+            <div class="source-box unframed">
+              <pre id="evalReferenceText" class="eval-text">{{ item.reference_text or "No reference provided." }}</pre>
+            </div>
+          </div>
+        </section>
+      {% endif %}
+
+      <section class="form-panel{% if eval_layout == 'document' %} eval-document-ranking-panel{% endif %}">
         <input type="hidden" name="item_id" value="{{ item.id }}">
 
-        <div class="eval-rank-table" data-rank-table>
-          <div class="eval-rank-table-head">
-            <span>Output</span>
-            <span>Controls</span>
-          </div>
-          <div class="eval-rank-table-body" data-rank-container>
+        {% if eval_layout == 'document' %}
+          <div class="eval-target-tabs" data-target-tabs role="tablist" aria-label="Translations">
             {% for candidate in candidates %}
-              <article class="eval-rank-table-row source-box unframed" data-rank-row data-candidate-model="{{ candidate.model_id }}" data-candidate-label="{{ candidate.label }}">
-                <div class="eval-row-output-cell">
-                  <span class="eval-candidate-letter" aria-label="Candidate {{ candidate.label }}">{{ candidate.label }}</span>
-                  <pre class="eval-text eval-target-annotator" data-target-annotator="{{ candidate.model_id }}">{{ candidate.output_text }}</pre>
-                </div>
+              <button
+                type="button"
+                class="secondary eval-target-tab{% if loop.first %} active{% endif %}"
+                data-target-tab="{{ candidate.model_id }}"
+                data-drag-handle
+                data-drag-model="{{ candidate.model_id }}"
+                aria-selected="{{ 'true' if loop.first else 'false' }}"
+              >
+                <span class="eval-target-tab-title">Translation {{ candidate.label }}</span>
+                <small class="eval-target-tab-rank" data-target-tab-rank="{{ candidate.model_id }}">Rank {{ candidate.rank_value or '—' }}</small>
+              </button>
+            {% endfor %}
+          </div>
+        {% endif %}
 
-                <div class="eval-row-rank-cell">
-                  <input type="hidden" name="model_ids" value="{{ candidate.model_id }}">
-                  <input type="hidden" name="rank_{{ candidate.model_id }}" value="{{ candidate.rank_value or '' }}" data-rank-input="{{ candidate.model_id }}">
-                  <div class="eval-row-controls-line">
-                    <div class="eval-rank-buttons" data-rank-controls="{{ candidate.model_id }}">
-                      {% for rank in expected_ranks %}
-                        <button type="button" class="secondary eval-rank-button" data-rank-model="{{ candidate.model_id }}" data-rank-value="{{ rank }}">{{ rank }}</button>
-                      {% endfor %}
+        <div class="eval-rank-table" data-rank-table>
+          <div class="eval-rank-table-head{% if eval_layout == 'document' %} eval-document-rank-table-head{% endif %}">
+            <span>Output</span>
+            {% if eval_layout != 'document' %}
+              <span>Controls</span>
+            {% endif %}
+          </div>
+          <div class="eval-rank-table-body{% if eval_layout == 'document' %} eval-document-rank-table-body{% endif %}" data-rank-container>
+            {% for candidate in candidates %}
+              <article class="eval-rank-table-row source-box unframed{% if eval_layout == 'document' %} eval-document-rank-row{% endif %}" data-rank-row data-candidate-model="{{ candidate.model_id }}" data-candidate-label="{{ candidate.label }}" data-target-pane="{{ candidate.model_id }}">
+                <input type="hidden" name="model_ids" value="{{ candidate.model_id }}">
+                <input type="hidden" name="rank_{{ candidate.model_id }}" value="{{ candidate.rank_value or '' }}" data-rank-input="{{ candidate.model_id }}">
+                <input type="hidden" name="error_span_{{ candidate.model_id }}" value="{{ candidate.error_span }}" data-error-json="{{ candidate.model_id }}">
+                <textarea name="comment_{{ candidate.model_id }}" rows="3" data-comment-input="{{ candidate.model_id }}" hidden>{{ candidate.comment }}</textarea>
+
+                {% if eval_layout == 'document' %}
+                  <div class="eval-row-output-cell eval-document-output-cell">
+                    <pre class="eval-text eval-target-annotator" data-target-annotator="{{ candidate.model_id }}">{{ candidate.output_text }}</pre>
+                    <div class="eval-document-output-actions eval-row-controls-line">
+                      <div class="eval-rank-buttons" data-rank-controls="{{ candidate.model_id }}">
+                        {% for rank in expected_ranks %}
+                          <button type="button" class="secondary eval-rank-button" data-rank-model="{{ candidate.model_id }}" data-rank-value="{{ rank }}">{{ rank }}</button>
+                        {% endfor %}
+                      </div>
+                      <button
+                        type="button"
+                        class="secondary eval-comment-icon"
+                        data-action="open-comment"
+                        data-comment-model="{{ candidate.model_id }}"
+                        aria-label="Edit comment for Translation {{ candidate.label }}"
+                        title="Edit comment"
+                      >
+                        💬
+                      </button>
                     </div>
-
-                    <button
-                      type="button"
-                      class="secondary eval-drag-handle"
-                      data-drag-handle
-                      data-drag-model="{{ candidate.model_id }}"
-                      aria-label="Drag row for candidate {{ candidate.label }}"
-                      title="Drag to reorder"
-                    >
-                      ↕
-                    </button>
-
-                    <button
-                      type="button"
-                      class="secondary eval-comment-icon"
-                      data-action="open-comment"
-                      data-comment-model="{{ candidate.model_id }}"
-                      aria-label="Edit comment for Translation {{ candidate.label }}"
-                      title="Edit comment"
-                    >
-                      💬
-                    </button>
                   </div>
-                  <small class="muted eval-comment-preview" data-comment-preview="{{ candidate.model_id }}">No comment.</small>
-                </div>
+                {% else %}
+                  <div class="eval-row-output-cell">
+                    <span class="eval-candidate-letter" aria-label="Candidate {{ candidate.label }}">{{ candidate.label }}</span>
+                    <pre class="eval-text eval-target-annotator" data-target-annotator="{{ candidate.model_id }}">{{ candidate.output_text }}</pre>
+                  </div>
+
+                  <div class="eval-row-rank-cell">
+                    <div class="eval-row-controls-line">
+                      <div class="eval-rank-buttons" data-rank-controls="{{ candidate.model_id }}">
+                        {% for rank in expected_ranks %}
+                          <button type="button" class="secondary eval-rank-button" data-rank-model="{{ candidate.model_id }}" data-rank-value="{{ rank }}">{{ rank }}</button>
+                        {% endfor %}
+                      </div>
+
+                      <button
+                        type="button"
+                        class="secondary eval-drag-handle"
+                        data-drag-handle
+                        data-drag-model="{{ candidate.model_id }}"
+                        aria-label="Drag row for candidate {{ candidate.label }}"
+                        title="Drag to reorder"
+                      >
+                        ↕
+                      </button>
+
+                      <button
+                        type="button"
+                        class="secondary eval-comment-icon"
+                        data-action="open-comment"
+                        data-comment-model="{{ candidate.model_id }}"
+                        aria-label="Edit comment for Translation {{ candidate.label }}"
+                        title="Edit comment"
+                      >
+                        💬
+                      </button>
+                    </div>
+                    <small class="muted eval-comment-preview" data-comment-preview="{{ candidate.model_id }}">No comment.</small>
+                  </div>
+                {% endif %}
 
                 <div class="eval-row-mark-lists">
-                  <input type="hidden" name="error_span_{{ candidate.model_id }}" value="{{ candidate.error_span }}" data-error-json="{{ candidate.model_id }}">
-                  <textarea name="comment_{{ candidate.model_id }}" rows="3" data-comment-input="{{ candidate.model_id }}" hidden>{{ candidate.comment }}</textarea>
-
                   <div class="eval-mark-lists">
                     <div class="eval-mark-compact-row">
                       <small class="muted">Source</small>
@@ -145,7 +216,45 @@
           <button type="submit">{{ "Update Evaluation" if is_revisit else "Submit Evaluation" }}</button>
         </div>
       </section>
+
+      {% if eval_layout == "document" %}
+          </div>
+        </section>
+      {% endif %}
     </form>
+
+    <section class="form-panel eval-guidance-panel section-gap">
+      <h2>How to annotate</h2>
+      <p class="muted">
+        Click a translation row or translation tab to make it active, then click a source word to start and click another source word to finish a source-side error span (untranslated, mistranslated, or wrong translation).
+      </p>
+      <p class="muted">
+        In the table, click words in output text to mark style spans. Use rank buttons for ties, or drag rows/tabs by handle to enforce strict order.
+      </p>
+      <p class="muted">
+        Use the note button on each marked span to explain why it was marked.
+      </p>
+      <p id="evalInteractionFeedback" class="form-note">Tip: click a row to activate source-side marking for that translation.</p>
+      <div class="editor-actions eval-ranking-actions">
+        {% if eval_layout_can_switch %}
+          <div class="eval-view-toggle" role="group" aria-label="Evaluation layout">
+            <a class="button secondary{% if eval_layout == 'table' %} active{% endif %}" href="{{ table_view_url }}">Table View</a>
+            <a class="button secondary{% if eval_layout == 'document' %} active{% endif %}" href="{{ document_view_url }}">Document View</a>
+          </div>
+        {% else %}
+          <small class="muted">View is fixed by project settings.</small>
+        {% endif %}
+        {% if link.evaluator_auto_rank_enabled %}
+          <button type="button" class="secondary" data-action="auto-rank">Suggest Auto Rank</button>
+        {% endif %}
+      </div>
+      {% if eval_layout == "document" %}
+        <p class="form-note eval-table-tradeoff">Document view keeps source/reference fixed at left and scrollable candidate outputs at right.</p>
+      {% endif %}
+      {% if is_revisit %}
+        <p class="form-note">You are revisiting a previously ranked source sentence. Saving updates your earlier ranking.</p>
+      {% endif %}
+    </section>
   {% else %}
     <section class="form-panel">
       <h2>No item available</h2>
@@ -178,5 +287,5 @@
     </form>
   </dialog>
 
-  <script src="{{ url_for('static', filename='human_eval_annotate.js') }}?v={{ STATIC_VERSION }}-he9"></script>
+  <script src="{{ url_for('static', filename='human_eval_annotate.js') }}?v={{ STATIC_VERSION }}-he11"></script>
 {% endblock %}

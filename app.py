@@ -65,6 +65,9 @@ RATE_LIMIT_PUBLIC_WRITES_PER_MIN = int(os.environ.get("RATE_LIMIT_PUBLIC_WRITES_
 RATE_LIMIT_AUTH_WRITES_PER_MIN = int(os.environ.get("RATE_LIMIT_AUTH_WRITES_PER_MIN", "240"))
 RATE_LIMIT_UPLOADS_PER_HOUR = int(os.environ.get("RATE_LIMIT_UPLOADS_PER_HOUR", "20"))
 HUMAN_EVAL_ERROR_SPAN_MAX_CHARS = int(os.environ.get("HUMAN_EVAL_ERROR_SPAN_MAX_CHARS", "20000"))
+HUMAN_EVAL_DYNAMIC_LAYOUT_SOURCE_CHAR_THRESHOLD = int(
+    os.environ.get("HUMAN_EVAL_DYNAMIC_LAYOUT_SOURCE_CHAR_THRESHOLD", "300")
+)
 _PG_POOL = None
 _DB_INITIALIZED = False
 _DB_INIT_LOCK = threading.Lock()
@@ -662,6 +665,8 @@ def init_postgres_schema(conn):
             source_language TEXT NOT NULL,
             target_language TEXT NOT NULL,
             evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1,
+            evaluator_auto_rank_enabled INTEGER NOT NULL DEFAULT 0,
+            default_eval_layout TEXT NOT NULL DEFAULT 'table',
             created_at TEXT NOT NULL
         )
         """
@@ -758,6 +763,14 @@ def init_postgres_schema(conn):
     conn.execute(
         "ALTER TABLE IF EXISTS human_eval_projects "
         "ADD COLUMN IF NOT EXISTS evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1"
+    )
+    conn.execute(
+        "ALTER TABLE IF EXISTS human_eval_projects "
+        "ADD COLUMN IF NOT EXISTS evaluator_auto_rank_enabled INTEGER NOT NULL DEFAULT 0"
+    )
+    conn.execute(
+        "ALTER TABLE IF EXISTS human_eval_projects "
+        "ADD COLUMN IF NOT EXISTS default_eval_layout TEXT NOT NULL DEFAULT 'table'"
     )
     create_hot_indexes(conn)
 
@@ -976,6 +989,8 @@ def init_db():
                 source_language TEXT NOT NULL,
                 target_language TEXT NOT NULL,
                 evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1,
+                evaluator_auto_rank_enabled INTEGER NOT NULL DEFAULT 0,
+                default_eval_layout TEXT NOT NULL DEFAULT 'table',
                 created_at TEXT NOT NULL
             );
 
@@ -1216,6 +1231,8 @@ def migrate_schema(conn):
             source_language TEXT NOT NULL,
             target_language TEXT NOT NULL,
             evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1,
+            evaluator_auto_rank_enabled INTEGER NOT NULL DEFAULT 0,
+            default_eval_layout TEXT NOT NULL DEFAULT 'table',
             created_at TEXT NOT NULL
         )
         """
@@ -1227,6 +1244,16 @@ def migrate_schema(conn):
         conn.execute(
             "ALTER TABLE human_eval_projects "
             "ADD COLUMN evaluator_public_stats_enabled INTEGER NOT NULL DEFAULT 1"
+        )
+    if "evaluator_auto_rank_enabled" not in human_eval_project_columns:
+        conn.execute(
+            "ALTER TABLE human_eval_projects "
+            "ADD COLUMN evaluator_auto_rank_enabled INTEGER NOT NULL DEFAULT 0"
+        )
+    if "default_eval_layout" not in human_eval_project_columns:
+        conn.execute(
+            "ALTER TABLE human_eval_projects "
+            "ADD COLUMN default_eval_layout TEXT NOT NULL DEFAULT 'table'"
         )
     conn.execute(
         """
@@ -2690,6 +2717,8 @@ def human_eval_link_for_token(conn, token):
                hp.source_language,
                hp.target_language,
                hp.evaluator_public_stats_enabled,
+               hp.evaluator_auto_rank_enabled,
+               hp.default_eval_layout,
                hp.owner_id
         FROM human_eval_links hel
         JOIN human_eval_projects hp ON hp.id = hel.project_id
@@ -2698,6 +2727,57 @@ def human_eval_link_for_token(conn, token):
         """,
         (token,),
     ).fetchone()
+
+
+def human_eval_normalize_layout(value, fallback="table", allow_dynamic=False):
+    allowed_values = {"table", "document"}
+    if allow_dynamic:
+        allowed_values.add("dynamic")
+
+    fallback_text = str(fallback or "table").strip().lower()
+    fallback_value = fallback_text if fallback_text in allowed_values else "table"
+
+    candidate = str(value or "").strip().lower()
+    if candidate in allowed_values:
+        return candidate
+    return fallback_value
+
+
+def human_eval_effective_layout(default_layout, source_text=None):
+    normalized_default = human_eval_normalize_layout(
+        default_layout,
+        fallback="table",
+        allow_dynamic=True,
+    )
+    if normalized_default != "dynamic":
+        return normalized_default
+
+    source_length = len(str(source_text or ""))
+    if source_length > HUMAN_EVAL_DYNAMIC_LAYOUT_SOURCE_CHAR_THRESHOLD:
+        return "document"
+    return "table"
+
+
+def compact_pagination_items(current_page, total_pages, radius=2):
+    current = max(int(current_page or 1), 1)
+    total = max(int(total_pages or 1), 1)
+    if total <= 1:
+        return [1]
+
+    pages = {1, total}
+    start = max(1, current - max(int(radius or 0), 0))
+    end = min(total, current + max(int(radius or 0), 0))
+    pages.update(range(start, end + 1))
+
+    ordered = sorted(pages)
+    items = []
+    previous = None
+    for page in ordered:
+        if previous is not None and page - previous > 1:
+            items.append(None)
+        items.append(page)
+        previous = page
+    return items
 
 
 def human_eval_public_stats_enabled(link):
@@ -5427,6 +5507,74 @@ def human_evaluation_project_detail(eval_project_id):
                     url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
                 )
 
+            if action == "update_auto_rank_visibility":
+                if not can_manage_access:
+                    flash("Only the project owner can change auto-rank settings.")
+                    return redirect(
+                        url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                    )
+                evaluator_auto_rank_enabled = (
+                    1 if request.form.get("evaluator_auto_rank_enabled") == "1" else 0
+                )
+                conn.execute(
+                    """
+                    UPDATE human_eval_projects
+                       SET evaluator_auto_rank_enabled = ?
+                     WHERE id = ?
+                    """,
+                    (evaluator_auto_rank_enabled, eval_project_id),
+                )
+                conn.commit()
+                flash(
+                    "Auto-rank suggestion enabled for evaluators."
+                    if evaluator_auto_rank_enabled
+                    else "Auto-rank suggestion disabled for evaluators."
+                )
+                return redirect(
+                    url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                )
+
+            if action == "update_default_eval_layout":
+                if not can_manage_access:
+                    flash("Only the project owner can change evaluator layout defaults.")
+                    return redirect(
+                        url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                    )
+
+                requested_layout = request.form.get("default_eval_layout")
+                normalized_layout = human_eval_normalize_layout(
+                    requested_layout,
+                    fallback="table",
+                    allow_dynamic=True,
+                )
+                if str(requested_layout or "").strip().lower() not in {"table", "document", "dynamic"}:
+                    flash("Invalid default evaluator layout.")
+                    return redirect(
+                        url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                    )
+
+                conn.execute(
+                    """
+                    UPDATE human_eval_projects
+                       SET default_eval_layout = ?
+                     WHERE id = ?
+                    """,
+                    (normalized_layout, eval_project_id),
+                )
+                conn.commit()
+                if normalized_layout == "document":
+                    flash("Default evaluator layout set to Document View.")
+                elif normalized_layout == "dynamic":
+                    flash(
+                        "Default evaluator layout set to Dynamic "
+                        f"(Document View for source text over {HUMAN_EVAL_DYNAMIC_LAYOUT_SOURCE_CHAR_THRESHOLD} characters)."
+                    )
+                else:
+                    flash("Default evaluator layout set to Table View.")
+                return redirect(
+                    url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                )
+
             if action == "create_evaluator_link":
                 evaluator_name = request.form.get("evaluator_name", "").strip()
                 if not evaluator_name:
@@ -5561,6 +5709,235 @@ def human_evaluation_project_detail(eval_project_id):
         analytics_rank_levels=analytics_payload["rank_levels"],
         shared_users=shared_users,
         can_manage_access=can_manage_access,
+    )
+
+
+@app.route("/human-evaluation/<int:eval_project_id>/texts", methods=["GET", "POST"])
+def human_evaluation_project_texts(eval_project_id):
+    user = require_login()
+    if not is_db_row(user):
+        return user
+
+    project = human_eval_project_for_user(eval_project_id, user["id"])
+    can_manage_texts = int(project["owner_id"]) == int(user["id"])
+
+    def parse_page_value(raw_value):
+        try:
+            return max(int(raw_value or 1), 1)
+        except (TypeError, ValueError):
+            return 1
+
+    def parse_per_page_value(raw_value):
+        candidate = int_or_none(raw_value)
+        return candidate if candidate and 1 <= candidate <= 200 else 20
+
+    if request.method == "POST":
+        page = parse_page_value(request.form.get("page"))
+        per_page = parse_per_page_value(request.form.get("per_page"))
+        query_text = request.form.get("q", "").strip()
+
+        def texts_redirect():
+            payload = {
+                "eval_project_id": eval_project_id,
+                "page": page,
+            }
+            if per_page != 20:
+                payload["per_page"] = per_page
+            if query_text:
+                payload["q"] = query_text
+            return redirect(url_for("human_evaluation_project_texts", **payload))
+
+        if not can_manage_texts:
+            flash("Only the project owner can edit imported text data.")
+            return texts_redirect()
+
+        action = request.form.get("action", "")
+        item_id = int_or_none(request.form.get("item_id"))
+        if not item_id:
+            flash("Invalid text row.")
+            return texts_redirect()
+
+        with db() as conn:
+            item_row = conn.execute(
+                "SELECT id FROM human_eval_items WHERE id = ? AND project_id = ?",
+                (item_id, eval_project_id),
+            ).fetchone()
+            if not item_row:
+                flash("Text row not found for this project.")
+                return texts_redirect()
+
+            model_rows = conn.execute(
+                "SELECT id FROM human_eval_models WHERE project_id = ? ORDER BY id",
+                (eval_project_id,),
+            ).fetchall()
+            model_ids = [row["id"] for row in model_rows]
+
+            if action == "save_item_texts":
+                source_text = request.form.get("source_text", "")
+                reference_text = request.form.get("reference_text", "")
+                conn.execute(
+                    """
+                    UPDATE human_eval_items
+                       SET source_text = ?,
+                           reference_text = ?
+                     WHERE id = ?
+                       AND project_id = ?
+                    """,
+                    (source_text, reference_text, item_id, eval_project_id),
+                )
+
+                existing_output_rows = conn.execute(
+                    "SELECT model_id FROM human_eval_outputs WHERE item_id = ?",
+                    (item_id,),
+                ).fetchall()
+                existing_output_model_ids = {row["model_id"] for row in existing_output_rows}
+
+                for model_id in model_ids:
+                    output_text = request.form.get(f"output_{model_id}", "")
+                    if model_id in existing_output_model_ids:
+                        conn.execute(
+                            """
+                            UPDATE human_eval_outputs
+                               SET output_text = ?
+                             WHERE item_id = ?
+                               AND model_id = ?
+                            """,
+                            (output_text, item_id, model_id),
+                        )
+                    else:
+                        conn.execute(
+                            """
+                            INSERT INTO human_eval_outputs (item_id, model_id, output_text, created_at)
+                            VALUES (?, ?, ?, ?)
+                            """,
+                            (item_id, model_id, output_text, now_iso()),
+                        )
+
+                conn.commit()
+                flash("Imported text row updated.")
+
+            elif action == "delete_item_texts":
+                conn.execute(
+                    "DELETE FROM human_eval_items WHERE id = ? AND project_id = ?",
+                    (item_id, eval_project_id),
+                )
+                conn.commit()
+                flash("Imported text row deleted.")
+
+            else:
+                flash("Unknown text-data action.")
+
+        return texts_redirect()
+
+    page = parse_page_value(request.args.get("page"))
+    per_page = parse_per_page_value(request.args.get("per_page"))
+    filters = {"q": request.args.get("q", "").strip()}
+
+    with db() as conn:
+        model_rows = conn.execute(
+            """
+            SELECT id,
+                   model_name
+            FROM human_eval_models
+            WHERE project_id = ?
+            ORDER BY id
+            """,
+            (eval_project_id,),
+        ).fetchall()
+        model_ids = [row["id"] for row in model_rows]
+
+        where = ["hi.project_id = ?"]
+        params = [eval_project_id]
+        if filters["q"]:
+            like = f"%{filters['q'].lower()}%"
+            q_id = int_or_none(filters["q"])
+            where.append(
+                """
+                (
+                    (? IS NOT NULL AND hi.id = ?)
+                    OR (? IS NOT NULL AND hi.ordinal = ?)
+                    OR
+                    lower(COALESCE(hi.source_text, '')) LIKE ?
+                    OR lower(COALESCE(hi.reference_text, '')) LIKE ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM human_eval_outputs hoq
+                        WHERE hoq.item_id = hi.id
+                          AND lower(COALESCE(hoq.output_text, '')) LIKE ?
+                    )
+                )
+                """
+            )
+            params.extend([q_id, q_id, q_id, q_id, like, like, like])
+
+        where_sql = " AND ".join(where)
+        total_count = conn.execute(
+            f"""
+            SELECT COUNT(*) AS count
+            FROM human_eval_items hi
+            WHERE {where_sql}
+            """,
+            tuple(params),
+        ).fetchone()["count"]
+
+        total_pages = max((total_count + per_page - 1) // per_page, 1)
+        page = min(page, total_pages)
+        offset = (page - 1) * per_page
+
+        item_rows = conn.execute(
+            f"""
+            SELECT hi.id,
+                   hi.ordinal,
+                   hi.source_text,
+                   hi.reference_text
+            FROM human_eval_items hi
+            WHERE {where_sql}
+            ORDER BY hi.ordinal
+            LIMIT ? OFFSET ?
+            """,
+            (*params, per_page, offset),
+        ).fetchall()
+
+        outputs_by_item_model = {}
+        if item_rows:
+            item_ids = [row["id"] for row in item_rows]
+            placeholders = ", ".join(["?"] * len(item_ids))
+            output_rows = conn.execute(
+                f"""
+                SELECT item_id,
+                       model_id,
+                       output_text
+                FROM human_eval_outputs
+                WHERE item_id IN ({placeholders})
+                """,
+                tuple(item_ids),
+            ).fetchall()
+            outputs_by_item_model = {
+                (row["item_id"], row["model_id"]): row["output_text"]
+                for row in output_rows
+            }
+
+    rows = []
+    for row in item_rows:
+        item = dict(row)
+        item["translations"] = {
+            model_id: outputs_by_item_model.get((row["id"], model_id), "")
+            for model_id in model_ids
+        }
+        rows.append(item)
+
+    return render_template(
+        "human_eval_project_texts.html",
+        project=project,
+        model_rows=model_rows,
+        rows=rows,
+        can_manage_texts=can_manage_texts,
+        filters=filters,
+        page=page,
+        per_page=per_page,
+        total_count=total_count,
+        total_pages=total_pages,
+        page_items=compact_pagination_items(page, total_pages),
     )
 
 
@@ -10126,6 +10503,51 @@ def human_evaluation(token):
         if not link:
             abort(404)
 
+        try:
+            default_layout_raw = link["default_eval_layout"]
+        except (KeyError, TypeError, IndexError):
+            default_layout_raw = "table"
+        default_eval_layout = human_eval_normalize_layout(
+            default_layout_raw,
+            fallback="table",
+            allow_dynamic=True,
+        )
+        allow_layout_override = default_eval_layout == "dynamic"
+
+        if request.method == "POST":
+            eval_layout_is_override = (
+                allow_layout_override
+                and bool_int(request.form.get("eval_layout_override")) == 1
+            )
+            requested_eval_layout = human_eval_normalize_layout(
+                request.form.get("eval_layout"),
+                fallback="table",
+            )
+        else:
+            requested_layout_raw = request.args.get("layout")
+            eval_layout_is_override = (
+                allow_layout_override
+                and str(requested_layout_raw or "").strip().lower() in {"table", "document"}
+            )
+            requested_eval_layout = human_eval_normalize_layout(
+                requested_layout_raw,
+                fallback="table",
+            )
+
+        eval_layout = (
+            requested_eval_layout
+            if eval_layout_is_override
+            else human_eval_effective_layout(default_eval_layout)
+        )
+
+        def evaluation_redirect(item_id=None):
+            payload = {"token": token}
+            if eval_layout_is_override or default_eval_layout != "dynamic":
+                payload["layout"] = eval_layout
+            if item_id is not None:
+                payload["item"] = item_id
+            return redirect(url_for("human_evaluation", **payload))
+
         total_items = conn.execute(
             "SELECT COUNT(*) AS count FROM human_eval_items WHERE project_id = ?",
             (link["project_id"],),
@@ -10159,7 +10581,7 @@ def human_evaluation(token):
             item_id = int_or_none(request.form.get("item_id"))
             if not item_id:
                 flash("Invalid text item.")
-                return redirect(url_for("human_evaluation", token=token))
+                return evaluation_redirect()
 
             item = conn.execute(
                 "SELECT * FROM human_eval_items WHERE id = ? AND project_id = ?",
@@ -10167,7 +10589,7 @@ def human_evaluation(token):
             ).fetchone()
             if not item:
                 flash("This text item is no longer available.")
-                return redirect(url_for("human_evaluation", token=token))
+                return evaluation_redirect()
 
             submitted_model_ids = [
                 int_or_none(value)
@@ -10176,14 +10598,14 @@ def human_evaluation(token):
             ]
             if len(submitted_model_ids) != len(model_ids) or set(submitted_model_ids) != set(model_ids):
                 flash("Model list is invalid. Reload and try again.")
-                return redirect(url_for("human_evaluation", token=token))
+                return evaluation_redirect()
 
             ranking_values = {}
             for model_id in model_ids:
                 rank_value = int_or_none(request.form.get(f"rank_{model_id}"))
                 if rank_value is None or rank_value not in expected_ranks:
                     flash("Each candidate must have a valid rank.")
-                    return redirect(url_for("human_evaluation", token=token))
+                    return evaluation_redirect()
                 ranking_values[model_id] = rank_value
 
             existing_rating = conn.execute(
@@ -10198,7 +10620,7 @@ def human_evaluation(token):
 
             if not existing_rating and remaining_credits <= 0:
                 flash("Credit limit reached for this evaluator link.")
-                return redirect(url_for("human_evaluation", token=token))
+                return evaluation_redirect()
 
             if existing_rating:
                 rating_id = existing_rating["id"]
@@ -10248,7 +10670,7 @@ def human_evaluation(token):
                         )
                 conn.commit()
                 flash("Evaluation updated.")
-                return redirect(url_for("human_evaluation", token=token, item=item_id))
+                return evaluation_redirect(item_id)
 
             conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
@@ -10263,7 +10685,7 @@ def human_evaluation(token):
             if existing:
                 conn.rollback()
                 flash("This text was already evaluated with this link. Open it from the sentence index to edit it.")
-                return redirect(url_for("human_evaluation", token=token, item=item_id))
+                return evaluation_redirect(item_id)
 
             try:
                 rating_id = insert_and_get_id(
@@ -10293,11 +10715,11 @@ def human_evaluation(token):
             except DB_INTEGRITY_ERRORS:
                 conn.rollback()
                 flash("This text was already evaluated for this link.")
-                return redirect(url_for("human_evaluation", token=token))
+                return evaluation_redirect()
 
             conn.commit()
             flash("Evaluation saved.")
-            return redirect(url_for("human_evaluation", token=token))
+            return evaluation_redirect()
 
         done_reason = None
         item = None
@@ -10324,6 +10746,12 @@ def human_evaluation(token):
                 item = human_eval_pick_next_item(conn, link)
                 if not item:
                     done_reason = "completed"
+
+        if not eval_layout_is_override:
+            eval_layout = human_eval_effective_layout(
+                default_eval_layout,
+                item["source_text"] if item else "",
+            )
 
         candidates = []
         is_revisit = False
@@ -10392,6 +10820,9 @@ def human_evaluation(token):
             expected_ranks=expected_ranks,
             done_reason=done_reason,
             is_revisit=is_revisit,
+            eval_layout=eval_layout,
+            eval_layout_is_override=eval_layout_is_override,
+            eval_layout_can_switch=allow_layout_override,
         )
 
 

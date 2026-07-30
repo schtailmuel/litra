@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Imported Text Data</h1>
+      <p>{{ project.name }} &middot; {{ total_count }} row{{ '' if total_count == 1 else 's' }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_project_detail', eval_project_id=project.id) }}">Back to Project</a>
+    </div>
+  </div>
+
+  <section class="form-panel">
+    <form method="get" class="filter-panel">
+      <label>
+        Search
+        <input name="q" value="{{ filters.q }}" placeholder="Source, reference, translation">
+      </label>
+      <label>
+        Rows per page
+        <select name="per_page">
+          <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+          <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+          <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+        </select>
+      </label>
+      <input type="hidden" name="page" value="1">
+      <div class="filter-actions">
+        <button type="submit">Apply</button>
+        <a class="button secondary" href="{{ url_for('human_evaluation_project_texts', eval_project_id=project.id) }}">Clear</a>
+      </div>
+    </form>
+
+    <div class="page-head compact-head">
+      <div>
+        <h2>Rows</h2>
+        <small class="muted">Page {{ page }} of {{ total_pages }}</small>
+      </div>
+      <div class="pagination">
+        {% if page > 1 %}
+          <a class="button secondary" href="{{ url_for('human_evaluation_project_texts', eval_project_id=project.id, page=1, per_page=per_page, q=filters.q) }}">First</a>
+          <a class="button secondary" href="{{ url_for('human_evaluation_project_texts', eval_project_id=project.id, page=page - 1, per_page=per_page, q=filters.q) }}">Previous</a>
+        {% endif %}
+        {% for token in page_items %}
+          {% if token is none %}
+            <span class="pagination-gap">…</span>
+          {% elif token == page %}
+            <span class="button secondary is-current">{{ token }}</span>
+          {% else %}
+            <a class="button secondary" href="{{ url_for('human_evaluation_project_texts', eval_project_id=project.id, page=token, per_page=per_page, q=filters.q) }}">{{ token }}</a>
+          {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+          <a class="button secondary" href="{{ url_for('human_evaluation_project_texts', eval_project_id=project.id, page=page + 1, per_page=per_page, q=filters.q) }}">Next</a>
+          <a class="button secondary" href="{{ url_for('human_evaluation_project_texts', eval_project_id=project.id, page=total_pages, per_page=per_page, q=filters.q) }}">Last</a>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if rows %}
+      <div class="eval-item-data-table-wrap">
+        <table class="eval-item-data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Ordinal</th>
+              <th>Source</th>
+              <th>Reference</th>
+              {% for model in model_rows %}
+                <th>{{ model.model_name }}</th>
+              {% endfor %}
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td><strong>{{ row.id }}</strong></td>
+                <td>{{ row.ordinal }}</td>
+                <td>
+                  <textarea name="source_text" form="item-form-{{ row.id }}" rows="4" {% if not can_manage_texts %}readonly{% endif %}>{{ row.source_text }}</textarea>
+                </td>
+                <td>
+                  <textarea name="reference_text" form="item-form-{{ row.id }}" rows="4" {% if not can_manage_texts %}readonly{% endif %}>{{ row.reference_text }}</textarea>
+                </td>
+                {% for model in model_rows %}
+                  <td>
+                    <textarea name="output_{{ model.id }}" form="item-form-{{ row.id }}" rows="4" {% if not can_manage_texts %}readonly{% endif %}>{{ row.translations[model.id] }}</textarea>
+                  </td>
+                {% endfor %}
+                <td>
+                  <form id="item-form-{{ row.id }}" method="post" class="eval-item-data-actions">
+                    <input type="hidden" name="item_id" value="{{ row.id }}">
+                    <input type="hidden" name="page" value="{{ page }}">
+                    <input type="hidden" name="per_page" value="{{ per_page }}">
+                    <input type="hidden" name="q" value="{{ filters.q }}">
+                    {% if can_manage_texts %}
+                      <button type="submit" name="action" value="save_item_texts">Save</button>
+                      <button
+                        type="submit"
+                        name="action"
+                        value="delete_item_texts"
+                        class="secondary danger-text-button"
+                        onclick="return confirm('Delete this imported row and all related rankings/ratings?');"
+                      >
+                        Delete
+                      </button>
+                    {% else %}
+                      <small class="muted">Read-only</small>
+                    {% endif %}
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No imported rows match the current filter.</p>
+    {% endif %}
+  </section>
+{% endblock %}

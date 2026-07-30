@@ -7,6 +7,7 @@
       <p>{{ project.source_language }} &rarr; {{ project.target_language }} &middot; {{ item_count }} items</p>
     </div>
     <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_project_texts', eval_project_id=project.id) }}">Manage Imported Texts</a>
       <a class="button secondary" href="{{ url_for('human_evaluation_download_annotations', eval_project_id=project.id) }}">Download All Annotations</a>
       <a class="button secondary" href="{{ url_for('human_evaluation_project_annotations', eval_project_id=project.id) }}">Manage Annotation Entries</a>
       <a class="button secondary" href="{{ url_for('human_evaluation_dashboard') }}">Back to Overview</a>
@@ -25,8 +26,8 @@
   <section class="form-panel section-gap">
     <div class="page-head compact-head">
       <div>
-        <h2>Evaluator Public Stats</h2>
-        <p class="muted">Control whether evaluator links can open the public stats page.</p>
+        <h2>Evaluator Settings</h2>
+        <p class="muted">Configure public stats visibility, auto-rank suggestion, and default evaluator layout.</p>
       </div>
     </div>
     {% if can_manage_access %}
@@ -41,10 +42,49 @@
         </label>
         <button type="submit">Save</button>
       </form>
+      <form method="post" class="inline-form section-gap">
+        <input type="hidden" name="action" value="update_auto_rank_visibility">
+        <label>
+          Suggest auto rank button
+          <select name="evaluator_auto_rank_enabled">
+            <option value="0" {% if not project.evaluator_auto_rank_enabled %}selected{% endif %}>Disabled</option>
+            <option value="1" {% if project.evaluator_auto_rank_enabled %}selected{% endif %}>Enabled</option>
+          </select>
+        </label>
+        <button type="submit">Save</button>
+      </form>
+      <form method="post" class="inline-form section-gap">
+        <input type="hidden" name="action" value="update_default_eval_layout">
+        <label>
+          Default evaluator view
+          <select name="default_eval_layout">
+            <option value="table" {% if (project.default_eval_layout or 'table') == 'table' %}selected{% endif %}>Table View</option>
+            <option value="document" {% if project.default_eval_layout == 'document' %}selected{% endif %}>Document View</option>
+            <option value="dynamic" {% if project.default_eval_layout == 'dynamic' %}selected{% endif %}>Dynamic (Auto by source length)</option>
+          </select>
+        </label>
+        <button type="submit">Save</button>
+      </form>
     {% else %}
       <p class="muted">
         Evaluator public stats are currently
         <strong>{{ "enabled" if project.evaluator_public_stats_enabled else "disabled" }}</strong>.
+      </p>
+      <p class="muted">
+        Suggest auto rank button is currently
+        <strong>{{ "enabled" if project.evaluator_auto_rank_enabled else "disabled" }}</strong>.
+      </p>
+      <p class="muted">
+        Default evaluator view is
+        <strong>
+          {% if project.default_eval_layout == "document" %}
+            Document View
+          {% elif project.default_eval_layout == "dynamic" %}
+            Dynamic (Auto by source length)
+          {% else %}
+            Table View
+          {% endif %}
+        </strong>.
       </p>
     {% endif %}
   </section>

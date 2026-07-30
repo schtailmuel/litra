@@ -75,7 +75,16 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     with litra_app.db() as conn:
         project = conn.execute("SELECT * FROM human_eval_projects WHERE owner_id = ?", (user_id,)).fetchone()
         assert project is not None
-        item = conn.execute("SELECT * FROM human_eval_items WHERE project_id = ? ORDER BY ordinal LIMIT 1", (project["id"],)).fetchone()
+        conn.execute(
+            "UPDATE human_eval_projects SET default_eval_layout = 'dynamic' WHERE id = ?",
+            (project["id"],),
+        )
+        item_rows = conn.execute(
+            "SELECT * FROM human_eval_items WHERE project_id = ? ORDER BY ordinal",
+            (project["id"],),
+        ).fetchall()
+        item = item_rows[0]
+        second_item = item_rows[1]
         model_ids = [
             row["id"]
             for row in conn.execute(
@@ -93,9 +102,84 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
         )
         conn.commit()
 
+    manager_texts_page = client.get(f"/human-evaluation/{project['id']}/texts?per_page=1")
+    assert manager_texts_page.status_code == 200
+    assert b"Imported Text Data" in manager_texts_page.data
+    assert b"Page 1 of 2" in manager_texts_page.data
+
+    update_manager_texts = client.post(
+        f"/human-evaluation/{project['id']}/texts",
+        data={
+            "action": "save_item_texts",
+            "item_id": str(item["id"]),
+            "page": "1",
+            "per_page": "1",
+            "q": "",
+            "source_text": "Hallo bearbeitet",
+            "reference_text": "Hello updated",
+            f"output_{model_ids[0]}": "Model A updated",
+            f"output_{model_ids[1]}": "Model B updated",
+        },
+    )
+    assert update_manager_texts.status_code == 302
+
+    with litra_app.db() as conn:
+        updated_item = conn.execute(
+            "SELECT source_text, reference_text FROM human_eval_items WHERE id = ?",
+            (item["id"],),
+        ).fetchone()
+        updated_outputs = conn.execute(
+            """
+            SELECT model_id, output_text
+            FROM human_eval_outputs
+            WHERE item_id = ?
+            ORDER BY model_id
+            """,
+            (item["id"],),
+        ).fetchall()
+    assert updated_item["source_text"] == "Hallo bearbeitet"
+    assert updated_item["reference_text"] == "Hello updated"
+    assert [row["output_text"] for row in updated_outputs] == ["Model A updated", "Model B updated"]
+
+    manager_texts_search_by_id = client.get(
+        f"/human-evaluation/{project['id']}/texts?q={item['id']}"
+    )
+    assert manager_texts_search_by_id.status_code == 200
+    assert bytes(f"<strong>{item['id']}</strong>", "utf-8") in manager_texts_search_by_id.data
+    assert b"Hallo bearbeitet" in manager_texts_search_by_id.data
+    assert "Tschüss".encode("utf-8") not in manager_texts_search_by_id.data
+
+    delete_manager_texts = client.post(
+        f"/human-evaluation/{project['id']}/texts",
+        data={
+            "action": "delete_item_texts",
+            "item_id": str(second_item["id"]),
+            "page": "1",
+            "per_page": "1",
+            "q": "",
+        },
+    )
+    assert delete_manager_texts.status_code == 302
+
+    with litra_app.db() as conn:
+        remaining_item_ids = [
+            row["id"]
+            for row in conn.execute(
+                "SELECT id FROM human_eval_items WHERE project_id = ? ORDER BY id",
+                (project["id"],),
+            ).fetchall()
+        ]
+    assert second_item["id"] not in remaining_item_ids
+
     evaluate_page = client.get("/he/eval-token")
     assert evaluate_page.status_code == 200
     assert b"How to annotate" in evaluate_page.data
+
+    document_view_page = client.get(f"/he/eval-token?item={item['id']}&layout=document")
+    assert document_view_page.status_code == 200
+    assert b"Document View" in document_view_page.data
+    assert b"eval-document-layout" in document_view_page.data
+    assert b'name="eval_layout" value="document"' in document_view_page.data
 
     submit_response = client.post(
         "/he/eval-token",
@@ -496,11 +580,60 @@ def test_human_evaluation_project_can_disable_evaluator_public_stats(monkeypatch
     initial_evaluator_page = client.get("/he/eval-token-stats-toggle")
     assert initial_evaluator_page.status_code == 200
     assert b"Public Stats" in initial_evaluator_page.data
+    assert b'name="eval_layout" value="table"' in initial_evaluator_page.data
+    assert b"Suggest Auto Rank" not in initial_evaluator_page.data
 
     initial_stats_page = client.get("/he/eval-token-stats-toggle/stats")
     assert initial_stats_page.status_code == 200
     initial_stats_api = client.get("/api/he/eval-token-stats-toggle/stats")
     assert initial_stats_api.status_code == 200
+
+    set_document_layout_response = client.post(
+        f"/human-evaluation/{project['id']}",
+        data={
+            "action": "update_default_eval_layout",
+            "default_eval_layout": "document",
+        },
+    )
+    assert set_document_layout_response.status_code == 302
+
+    with litra_app.db() as conn:
+        updated_layout = conn.execute(
+            "SELECT default_eval_layout FROM human_eval_projects WHERE id = ?",
+            (project["id"],),
+        ).fetchone()
+    assert updated_layout["default_eval_layout"] == "document"
+
+    evaluator_page_document_default = client.get("/he/eval-token-stats-toggle")
+    assert evaluator_page_document_default.status_code == 200
+    assert b'name="eval_layout" value="document"' in evaluator_page_document_default.data
+    assert b"eval-document-layout" in evaluator_page_document_default.data
+
+    evaluator_page_table_override = client.get("/he/eval-token-stats-toggle?layout=table")
+    assert evaluator_page_table_override.status_code == 200
+    assert b'name="eval_layout" value="document"' in evaluator_page_table_override.data
+    assert b"eval-document-layout" in evaluator_page_table_override.data
+    assert b"View is fixed by project settings." in evaluator_page_table_override.data
+
+    enable_auto_rank_response = client.post(
+        f"/human-evaluation/{project['id']}",
+        data={
+            "action": "update_auto_rank_visibility",
+            "evaluator_auto_rank_enabled": "1",
+        },
+    )
+    assert enable_auto_rank_response.status_code == 302
+
+    with litra_app.db() as conn:
+        updated_auto_rank = conn.execute(
+            "SELECT evaluator_auto_rank_enabled FROM human_eval_projects WHERE id = ?",
+            (project["id"],),
+        ).fetchone()
+    assert updated_auto_rank["evaluator_auto_rank_enabled"] == 1
+
+    evaluator_page_after_auto_rank_enable = client.get("/he/eval-token-stats-toggle")
+    assert evaluator_page_after_auto_rank_enable.status_code == 200
+    assert b"Suggest Auto Rank" in evaluator_page_after_auto_rank_enable.data
 
     disable_response = client.post(
         f"/human-evaluation/{project['id']}",
@@ -531,6 +664,105 @@ def test_human_evaluation_project_can_disable_evaluator_public_stats(monkeypatch
     stats_api_payload = stats_api_after_disable.get_json()
     assert stats_api_payload["status"] == "error"
     assert "disabled" in stats_api_payload["message"].lower()
+
+
+def test_human_evaluation_dynamic_default_layout(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        user_id = conn.execute("SELECT id FROM users WHERE username = ?", ("owner",)).fetchone()["id"]
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = user_id
+
+    short_source = "Short source text"
+    long_source = "L" * 301
+
+    create_response = client.post(
+        "/human-evaluation/new",
+        data={
+            "name": "Eval dynamic layout",
+            "source_language": "German",
+            "target_language": "English",
+            "source_txt": (BytesIO(f"{short_source}\n{long_source}\n".encode("utf-8")), "source.txt"),
+            "model_files": [
+                (BytesIO("Short A\nLong A\n".encode("utf-8")), "model-a.txt"),
+                (BytesIO("Short B\nLong B\n".encode("utf-8")), "model-b.txt"),
+            ],
+        },
+        content_type="multipart/form-data",
+    )
+    assert create_response.status_code == 302
+
+    with litra_app.db() as conn:
+        project = conn.execute("SELECT * FROM human_eval_projects WHERE owner_id = ?", (user_id,)).fetchone()
+        assert project is not None
+        item_rows = conn.execute(
+            "SELECT id, ordinal FROM human_eval_items WHERE project_id = ? ORDER BY ordinal",
+            (project["id"],),
+        ).fetchall()
+        short_item_id = item_rows[0]["id"]
+        long_item_id = item_rows[1]["id"]
+
+        conn.execute(
+            """
+            INSERT INTO human_eval_links
+                (project_id, token, evaluator_name, credit_limit, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (project["id"], "eval-token-dynamic-layout", "Eva", 5, litra_app.now_iso()),
+        )
+        conn.commit()
+
+    set_dynamic_layout_response = client.post(
+        f"/human-evaluation/{project['id']}",
+        data={
+            "action": "update_default_eval_layout",
+            "default_eval_layout": "dynamic",
+        },
+    )
+    assert set_dynamic_layout_response.status_code == 302
+
+    with litra_app.db() as conn:
+        updated_layout = conn.execute(
+            "SELECT default_eval_layout FROM human_eval_projects WHERE id = ?",
+            (project["id"],),
+        ).fetchone()
+    assert updated_layout["default_eval_layout"] == "dynamic"
+
+    short_item_page = client.get(f"/he/eval-token-dynamic-layout?item={short_item_id}")
+    assert short_item_page.status_code == 200
+    assert b'name="eval_layout" value="table"' in short_item_page.data
+    assert b'name="eval_layout_override" value="0"' in short_item_page.data
+    assert b"eval-document-layout" not in short_item_page.data
+    assert b"View is fixed by project settings." not in short_item_page.data
+    assert b"Table View" in short_item_page.data
+    assert b"Document View" in short_item_page.data
+
+    long_item_page = client.get(f"/he/eval-token-dynamic-layout?item={long_item_id}")
+    assert long_item_page.status_code == 200
+    assert b'name="eval_layout" value="document"' in long_item_page.data
+    assert b'name="eval_layout_override" value="0"' in long_item_page.data
+    assert b"eval-document-layout" in long_item_page.data
+
+    long_item_table_override = client.get(
+        f"/he/eval-token-dynamic-layout?item={long_item_id}&layout=table"
+    )
+    assert long_item_table_override.status_code == 200
+    assert b'name="eval_layout" value="table"' in long_item_table_override.data
+    assert b'name="eval_layout_override" value="1"' in long_item_table_override.data
+    assert b"eval-document-layout" not in long_item_table_override.data
 
 
 def test_project_access_sharing_and_dashboards(monkeypatch, tmp_path):

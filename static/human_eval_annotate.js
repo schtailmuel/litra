@@ -11,6 +11,9 @@
   const markNoteModalField = document.getElementById("evalMarkNoteModalField");
   const markNoteModalTitle = document.getElementById("evalMarkNoteModalTitle");
   const markNoteModalSnippet = document.getElementById("evalMarkNoteModalSnippet");
+  const sourceTabButtons = Array.from(document.querySelectorAll("[data-source-tab]"));
+  const sourcePanes = Array.from(document.querySelectorAll("[data-source-pane]"));
+  const targetTabsContainer = document.querySelector("[data-target-tabs]");
 
   if (!sourceRoot || !rankContainer || !rankRows.length) {
     return;
@@ -39,6 +42,40 @@
   const commentInputByModel = new Map();
   const commentButtonByModel = new Map();
   const commentPreviewByModel = new Map();
+  const sourceTabByKey = new Map();
+  const sourcePaneByKey = new Map();
+  const targetTabByModel = new Map();
+  const targetTabRankByModel = new Map();
+
+  sourceTabButtons.forEach((button) => {
+    const tabKey = String(button.dataset.sourceTab || "");
+    if (tabKey) {
+      sourceTabByKey.set(tabKey, button);
+    }
+  });
+
+  sourcePanes.forEach((pane) => {
+    const paneKey = String(pane.dataset.sourcePane || "");
+    if (paneKey) {
+      sourcePaneByKey.set(paneKey, pane);
+    }
+  });
+
+  if (targetTabsContainer) {
+    const targetTabButtons = Array.from(targetTabsContainer.querySelectorAll("[data-target-tab]"));
+    targetTabButtons.forEach((tabButton) => {
+      const modelId = String(tabButton.dataset.targetTab || "");
+      if (!modelId) {
+        return;
+      }
+      targetTabByModel.set(modelId, tabButton);
+      const rankNode = tabButton.querySelector(`[data-target-tab-rank="${modelId}"]`)
+        || tabButton.querySelector("[data-target-tab-rank]");
+      if (rankNode) {
+        targetTabRankByModel.set(modelId, rankNode);
+      }
+    });
+  }
 
   let activeModelId = String(rankRows[0].dataset.candidateModel || "");
   let pendingMarkState = null;
@@ -201,10 +238,19 @@
       const fill = hexToRgba(color, 0.14);
       const tieCount = rank ? rankTieCounts.get(rank) || 1 : 0;
       const row = modelRow(modelId);
+      const tabButton = targetTabByModel.get(modelId);
+      const tabRank = targetTabRankByModel.get(modelId);
       if (row) {
         row.style.setProperty("--eval-rank-color", color);
         row.style.setProperty("--eval-rank-fill", fill);
         row.dataset.tie = rank && tieCount > 1 ? "1" : "0";
+      }
+      if (tabButton) {
+        tabButton.style.setProperty("--eval-rank-color", color);
+        tabButton.dataset.tie = rank && tieCount > 1 ? "1" : "0";
+      }
+      if (tabRank) {
+        tabRank.textContent = rank ? `Rank ${rank}` : "Rank —";
       }
       updateRankButtons(modelId);
       updateCommentButton(modelId);
@@ -286,6 +332,10 @@
         const row = modelRow(modelId);
         if (row) {
           rankContainer.appendChild(row);
+        }
+        const tabButton = targetTabByModel.get(modelId);
+        if (targetTabsContainer && tabButton) {
+          targetTabsContainer.appendChild(tabButton);
         }
       });
     };
@@ -722,6 +772,29 @@
     setFeedback("Removed mark.");
   }
 
+  function setActiveSourcePane(tabKey) {
+    if (!sourcePaneByKey.size || !sourceTabByKey.size) {
+      return;
+    }
+    const availableTabs = Array.from(sourcePaneByKey.keys());
+    if (!availableTabs.length) {
+      return;
+    }
+    const nextTabKey = sourcePaneByKey.has(tabKey) ? tabKey : availableTabs[0];
+
+    sourcePaneByKey.forEach((pane, key) => {
+      const isActive = key === nextTabKey;
+      pane.hidden = !isActive;
+      pane.classList.toggle("active", isActive);
+    });
+
+    sourceTabByKey.forEach((tabButton, key) => {
+      const isActive = key === nextTabKey;
+      tabButton.classList.toggle("active", isActive);
+      tabButton.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+  }
+
   function setActiveModel(modelId, options = {}) {
     if (!modelId || !stateByModel.has(modelId)) {
       return;
@@ -738,6 +811,14 @@
     rowOrder().forEach((row) => {
       const current = String(row.dataset.candidateModel || "");
       row.dataset.activeSource = current === activeModelId ? "1" : "0";
+      if (targetTabByModel.size) {
+        row.hidden = current !== activeModelId;
+      }
+    });
+    targetTabByModel.forEach((tabButton, currentModelId) => {
+      const isActive = currentModelId === activeModelId;
+      tabButton.classList.toggle("active", isActive);
+      tabButton.setAttribute("aria-selected", isActive ? "true" : "false");
     });
     renderHighlights();
     if (changed && options.announce !== false) {
@@ -872,6 +953,44 @@
     rankContainer.querySelectorAll(".eval-drop-target").forEach((node) => {
       node.classList.remove("eval-drop-target");
     });
+    targetTabsContainer?.querySelectorAll(".eval-drop-target").forEach((node) => {
+      node.classList.remove("eval-drop-target");
+    });
+  }
+
+  function dropTargetFromNode(node) {
+    return node?.closest?.("[data-target-tab], [data-rank-row]") || null;
+  }
+
+  function modelIdFromDropTarget(target) {
+    if (!target) {
+      return "";
+    }
+    if (target.matches("[data-target-tab]")) {
+      return String(target.dataset.targetTab || "");
+    }
+    if (target.matches("[data-rank-row]")) {
+      return String(target.dataset.candidateModel || "");
+    }
+    return "";
+  }
+
+  function applyDropForEvent(event) {
+    if (!draggedModelId) {
+      return;
+    }
+    event.preventDefault();
+    const targetNode = dropTargetFromNode(event.target);
+    const candidateTargetId = modelIdFromDropTarget(targetNode);
+    const targetId = candidateTargetId && candidateTargetId !== draggedModelId
+      ? candidateTargetId
+      : null;
+    const nextOrder = modelIdsAfterInsert(modelOrder(), draggedModelId, targetId);
+    applyModelOrder(nextOrder, { animate: true });
+    recomputeStrictRanksFromOrder();
+    updateRankUi();
+    setFeedback("Inserted translation before target and recomputed strict ranks.");
+    clearDropTargets();
   }
 
   function enableRankDragAndDrop() {
@@ -891,7 +1010,9 @@
       }
       draggedModelId = modelId;
       const row = modelRow(modelId);
+      const tabButton = targetTabByModel.get(modelId);
       row?.classList.add("eval-card-dragging");
+      tabButton?.classList.add("eval-card-dragging");
 
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = "move";
@@ -899,40 +1020,31 @@
       }
     });
 
-    rankContainer.addEventListener("dragover", (event) => {
+    const onDragOver = (event) => {
       if (!draggedModelId) {
         return;
       }
       event.preventDefault();
       clearDropTargets();
-      const target = event.target.closest("[data-rank-row]");
-      if (target && String(target.dataset.candidateModel || "") !== draggedModelId) {
+      const target = dropTargetFromNode(event.target);
+      const targetId = modelIdFromDropTarget(target);
+      if (target && targetId && targetId !== draggedModelId) {
         target.classList.add("eval-drop-target");
       }
-    });
+    };
 
-    rankContainer.addEventListener("drop", (event) => {
-      if (!draggedModelId) {
-        return;
-      }
-      event.preventDefault();
-      const target = event.target.closest("[data-rank-row]");
-      const targetId = target && String(target.dataset.candidateModel || "") !== draggedModelId
-        ? String(target.dataset.candidateModel || "")
-        : null;
-      const nextOrder = modelIdsAfterInsert(modelOrder(), draggedModelId, targetId);
-      applyModelOrder(nextOrder, { animate: true });
-      recomputeStrictRanksFromOrder();
-      updateRankUi();
-      setFeedback("Inserted row before target and recomputed rankings from new order.");
-      clearDropTargets();
-    });
+    rankContainer.addEventListener("dragover", onDragOver);
+    targetTabsContainer?.addEventListener("dragover", onDragOver);
+
+    rankContainer.addEventListener("drop", applyDropForEvent);
+    targetTabsContainer?.addEventListener("drop", applyDropForEvent);
 
     document.addEventListener("dragend", () => {
       if (!draggedModelId) {
         return;
       }
       modelRow(draggedModelId)?.classList.remove("eval-card-dragging");
+      targetTabByModel.get(draggedModelId)?.classList.remove("eval-card-dragging");
       clearDropTargets();
       draggedModelId = null;
     });
@@ -1129,6 +1241,14 @@
   });
 
   tokenizeText(sourceRoot);
+
+  const initialSourceTab = sourceTabButtons.find((button) => button.classList.contains("active"));
+  if (initialSourceTab) {
+    setActiveSourcePane(String(initialSourceTab.dataset.sourceTab || ""));
+  } else {
+    setActiveSourcePane("source");
+  }
+
   setActiveModel(activeModelId, { announce: false });
 
   ensureInitialRanks();
@@ -1181,6 +1301,21 @@
   });
 
   document.addEventListener("click", (event) => {
+    const sourceTabButton = event.target.closest("[data-source-tab]");
+    if (sourceTabButton) {
+      setActiveSourcePane(String(sourceTabButton.dataset.sourceTab || ""));
+      return;
+    }
+
+    const targetTabButton = event.target.closest("[data-target-tab]");
+    if (targetTabButton) {
+      const modelId = String(targetTabButton.dataset.targetTab || "");
+      if (modelId) {
+        setActiveModel(modelId, { announce: false });
+      }
+      return;
+    }
+
     const removeButton = event.target.closest("[data-remove-model-id]");
     if (removeButton) {
       const modelId = String(removeButton.dataset.removeModelId || "");
