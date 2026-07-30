@@ -174,6 +174,9 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     evaluate_page = client.get("/he/eval-token")
     assert evaluate_page.status_code == 200
     assert b"How to annotate" in evaluate_page.data
+    assert b'data-eval-text-size' in evaluate_page.data
+    assert b'min="10"' in evaluate_page.data
+    assert b'max="26"' in evaluate_page.data
 
     document_view_page = client.get(f"/he/eval-token?item={item['id']}&layout=document")
     assert document_view_page.status_code == 200

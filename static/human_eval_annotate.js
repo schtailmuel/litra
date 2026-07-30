@@ -14,8 +14,12 @@
   const sourceTabButtons = Array.from(document.querySelectorAll("[data-source-tab]"));
   const sourcePanes = Array.from(document.querySelectorAll("[data-source-pane]"));
   const targetTabsContainer = document.querySelector("[data-target-tabs]");
-  const evaluationForm = rankContainer.closest("form");
+  const evaluationForm = rankContainer?.closest("form");
   const submitButtons = Array.from(evaluationForm?.querySelectorAll('button[type="submit"]') || []);
+  const textSizeSlider = document.querySelector("[data-eval-text-size]");
+  const textSizeValue = document.querySelector("[data-eval-text-size-value]");
+  const textSizeStorageKey = "humanEvalTextSizePx";
+  const textSizeDefaultPx = Number.parseInt(String(textSizeSlider?.dataset.defaultSize || "20"), 10);
 
   if (!sourceRoot || !rankContainer || !rankRows.length) {
     return;
@@ -104,6 +108,53 @@
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, limit);
+  }
+
+  function clampTextSize(value) {
+    const parsed = Number.parseInt(String(value || ""), 10);
+    const min = Number.parseInt(String(textSizeSlider?.min || "10"), 10);
+    const max = Number.parseInt(String(textSizeSlider?.max || "26"), 10);
+    const safeMin = Number.isInteger(min) ? min : 10;
+    const safeMax = Number.isInteger(max) ? max : 26;
+    const fallback = Number.isInteger(textSizeDefaultPx) ? textSizeDefaultPx : 20;
+    if (!Number.isInteger(parsed)) {
+      return Math.min(Math.max(fallback, safeMin), safeMax);
+    }
+    return Math.min(Math.max(parsed, safeMin), safeMax);
+  }
+
+  function applyTextSize(sizePx, options = {}) {
+    const { persist = true } = options;
+    const next = clampTextSize(sizePx);
+    document.documentElement.style.setProperty("--eval-text-size", `${next}px`);
+    if (textSizeSlider) {
+      textSizeSlider.value = String(next);
+    }
+    if (textSizeValue) {
+      textSizeValue.textContent = `${next}px`;
+    }
+    if (persist) {
+      try {
+        window.localStorage.setItem(textSizeStorageKey, String(next));
+      } catch (_error) {}
+    }
+    return next;
+  }
+
+  function initialTextSize() {
+    try {
+      const stored = Number.parseInt(String(window.localStorage.getItem(textSizeStorageKey) || ""), 10);
+      if (Number.isInteger(stored)) {
+        return clampTextSize(stored);
+      }
+    } catch (_error) {}
+    if (textSizeSlider) {
+      const sliderValue = Number.parseInt(String(textSizeSlider.value || ""), 10);
+      if (Number.isInteger(sliderValue)) {
+        return clampTextSize(sliderValue);
+      }
+    }
+    return clampTextSize(textSizeDefaultPx);
   }
 
   function parseRank(value) {
@@ -1267,6 +1318,11 @@
   }
 
   setActiveModel(activeModelId, { announce: false });
+
+  applyTextSize(initialTextSize(), { persist: false });
+  textSizeSlider?.addEventListener("input", (event) => {
+    applyTextSize(event.target.value);
+  });
 
   reorderByRank({ animate: false });
   updateRankUi();

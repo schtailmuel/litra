@@ -225,6 +225,20 @@
     </form>
 
     <section class="form-panel eval-guidance-panel section-gap">
+      <div class="eval-font-size-controls" role="group" aria-label="Evaluation text size">
+        <label for="evalTextSize">Text size</label>
+        <input
+          id="evalTextSize"
+          type="range"
+          min="10"
+          max="26"
+          step="1"
+          value="20"
+          data-eval-text-size
+          data-default-size="20"
+        >
+        <output for="evalTextSize" data-eval-text-size-value>20px</output>
+      </div>
       <h2>How to annotate</h2>
       <p class="muted">
         Click a translation row or translation tab to make it active, then click a source word to start and click another source word to finish a source-side error span (untranslated, mistranslated, or wrong translation).
