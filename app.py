@@ -5615,6 +5615,48 @@ def human_evaluation_project_detail(eval_project_id):
                 conn.commit()
                 flash("Evaluator link created.")
 
+            elif action == "update_evaluator_link_credits":
+                try:
+                    link_id = parse_optional_int(request.form.get("link_id"), "Evaluator link")
+                    credit_limit = parse_optional_int(request.form.get("credit_limit"), "Credits")
+                except ValueError as exc:
+                    flash(str(exc))
+                    return redirect(
+                        url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                    )
+                if link_id is None or credit_limit is None:
+                    flash("Evaluator link and credits are required.")
+                    return redirect(
+                        url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                    )
+
+                link = conn.execute(
+                    """
+                    SELECT id
+                    FROM human_eval_links
+                    WHERE id = ?
+                      AND project_id = ?
+                      AND revoked_at IS NULL
+                    """,
+                    (link_id, eval_project_id),
+                ).fetchone()
+                if not link:
+                    flash("Invalid evaluator link.")
+                    return redirect(
+                        url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+                    )
+
+                conn.execute(
+                    """
+                    UPDATE human_eval_links
+                       SET credit_limit = ?
+                     WHERE id = ?
+                    """,
+                    (credit_limit, link_id),
+                )
+                conn.commit()
+                flash("Evaluator credits updated.")
+
             elif action == "revoke_evaluator_link":
                 link_id = int_or_none(request.form.get("link_id"))
                 if not link_id:

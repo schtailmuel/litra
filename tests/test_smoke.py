@@ -606,6 +606,36 @@ def test_human_evaluation_project_can_disable_evaluator_public_stats(monkeypatch
         )
         conn.commit()
 
+    with litra_app.db() as conn:
+        evaluator_link = conn.execute(
+            "SELECT id, credit_limit FROM human_eval_links WHERE token = ?",
+            ("eval-token-stats-toggle",),
+        ).fetchone()
+    assert evaluator_link is not None
+    assert evaluator_link["credit_limit"] == 5
+
+    update_credits_response = client.post(
+        f"/human-evaluation/{project['id']}",
+        data={
+            "action": "update_evaluator_link_credits",
+            "link_id": str(evaluator_link["id"]),
+            "credit_limit": "9",
+        },
+    )
+    assert update_credits_response.status_code == 302
+
+    with litra_app.db() as conn:
+        updated_evaluator_link = conn.execute(
+            "SELECT credit_limit FROM human_eval_links WHERE id = ?",
+            (evaluator_link["id"],),
+        ).fetchone()
+    assert updated_evaluator_link["credit_limit"] == 9
+
+    project_detail_page = client.get(f"/human-evaluation/{project['id']}")
+    assert project_detail_page.status_code == 200
+    assert b"update_evaluator_link_credits" in project_detail_page.data
+    assert b"Update Credits" in project_detail_page.data
+
     initial_evaluator_page = client.get("/he/eval-token-stats-toggle")
     assert initial_evaluator_page.status_code == 200
     assert b"Public Stats" in initial_evaluator_page.data

@@ -1531,6 +1531,21 @@ button.danger-text-button:hover {
   grid-column: 1 / -1;
 }
 
+.link-credit-form {
+  grid-template-columns: minmax(6.5rem, 8.5rem) auto;
+  gap: 0.45rem;
+  align-items: end;
+}
+
+.link-credit-form button {
+  grid-column: auto;
+  white-space: nowrap;
+}
+
+.link-credit-form input[type="number"] {
+  max-width: 8.5rem;
+}
+
 .language-upload-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

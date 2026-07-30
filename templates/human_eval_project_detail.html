@@ -177,7 +177,8 @@
       <div class="link-list">
         {% for link in links %}
           {% set eval_url = url_for('human_evaluation', token=link.token, _external=True) %}
-          {% set percent = (link.used_credits * 100 / link.credit_limit)|round(0, 'floor') if link.credit_limit else 0 %}
+          {% set percent_raw = (link.used_credits * 100 / link.credit_limit)|round(0, 'floor') if link.credit_limit else 0 %}
+          {% set percent = [percent_raw, 100]|min %}
           <div class="link-row">
             <div class="link-summary">
               <strong>{{ link.evaluator_name or 'Evaluator' }}</strong>
@@ -186,6 +187,15 @@
               </div>
               <small>{{ link.used_credits }} / {{ link.credit_limit }} used ({{ link.remaining_credits }} remaining)</small>
             </div>
+            <form method="post" class="assignment-limit-form link-credit-form">
+              <input type="hidden" name="action" value="update_evaluator_link_credits">
+              <input type="hidden" name="link_id" value="{{ link.id }}">
+              <label>
+                Credits
+                <input name="credit_limit" type="number" min="1" value="{{ link.credit_limit }}" required>
+              </label>
+              <button type="submit" class="secondary">Update Credits</button>
+            </form>
             <label>
               Access URL
               <input readonly value="{{ eval_url }}" onfocus="this.select()">
