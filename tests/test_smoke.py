@@ -181,6 +181,32 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     assert b"eval-document-layout" in document_view_page.data
     assert b'name="eval_layout" value="document"' in document_view_page.data
 
+    missing_rank_submit = client.post(
+        "/he/eval-token",
+        data={
+            "item_id": str(item["id"]),
+            "model_ids": [str(model_ids[0]), str(model_ids[1])],
+            f"error_span_{model_ids[0]}": "",
+            f"error_span_{model_ids[1]}": "",
+            f"comment_{model_ids[0]}": "",
+            f"comment_{model_ids[1]}": "",
+        },
+        follow_redirects=True,
+    )
+    assert missing_rank_submit.status_code == 200
+    assert b"Each candidate must have a valid rank." in missing_rank_submit.data
+
+    with litra_app.db() as conn:
+        rating_count_before_submit = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM human_eval_ratings hr
+            JOIN human_eval_links hel ON hel.id = hr.link_id
+            WHERE hel.token = 'eval-token'
+            """
+        ).fetchone()["count"]
+    assert rating_count_before_submit == 0
+
     submit_response = client.post(
         "/he/eval-token",
         data={

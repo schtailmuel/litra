@@ -3627,14 +3627,14 @@ button.danger-text-button:hover {
 
 .eval-word-token {
   border-radius: 0.38rem;
-  padding: 0.06rem 0.22rem;
+  /* padding: 0.06rem 0.22rem; */
   margin: 0;
   transition: background 0.12s ease;
 }
 
 .eval-source-annotator .eval-word-token,
 .eval-target-annotator .eval-word-token {
-  background: rgba(37, 99, 235, 0.08);
+  /* background: rgba(37, 99, 235, 0.08); */
 }
 
 .eval-source-annotator .eval-word-token:hover,

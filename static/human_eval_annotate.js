@@ -14,6 +14,8 @@
   const sourceTabButtons = Array.from(document.querySelectorAll("[data-source-tab]"));
   const sourcePanes = Array.from(document.querySelectorAll("[data-source-pane]"));
   const targetTabsContainer = document.querySelector("[data-target-tabs]");
+  const evaluationForm = rankContainer.closest("form");
+  const submitButtons = Array.from(evaluationForm?.querySelectorAll('button[type="submit"]') || []);
 
   if (!sourceRoot || !rankContainer || !rankRows.length) {
     return;
@@ -255,13 +257,28 @@
       updateRankButtons(modelId);
       updateCommentButton(modelId);
     }
+    updateSubmitState();
   }
 
-  function ensureInitialRanks() {
-    modelOrder().forEach((modelId, index) => {
+  function allRanksAssigned() {
+    for (const modelId of rankInputByModel.keys()) {
       if (!rankValue(modelId)) {
-        setRankValue(modelId, index + 1);
+        return false;
       }
+    }
+    return true;
+  }
+
+  function updateSubmitState() {
+    if (!submitButtons.length) {
+      return;
+    }
+    const complete = allRanksAssigned();
+    submitButtons.forEach((button) => {
+      button.disabled = !complete;
+      button.title = complete
+        ? ""
+        : "Assign a rank to every translation before submitting.";
     });
   }
 
@@ -1251,7 +1268,6 @@
 
   setActiveModel(activeModelId, { announce: false });
 
-  ensureInitialRanks();
   reorderByRank({ animate: false });
   updateRankUi();
 
@@ -1379,5 +1395,13 @@
       saveMarkNoteModal();
       return;
     }
+  });
+
+  evaluationForm?.addEventListener("submit", (event) => {
+    if (allRanksAssigned()) {
+      return;
+    }
+    event.preventDefault();
+    setFeedback("Assign a rank to each translation before submitting.");
   });
 })();
