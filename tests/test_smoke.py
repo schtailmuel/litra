@@ -181,6 +181,18 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
 
     public_stats_page = client.get("/he/eval-token/stats")
     assert public_stats_page.status_code == 200
+    assert b"Export LaTeX" in public_stats_page.data
+    assert b"Sentence Votes" in public_stats_page.data
+    assert b"data-action=\"export-ranking-latex\"" in public_stats_page.data
+    assert b"data-action=\"export-pairwise-latex\"" in public_stats_page.data
+
+    manager_stats_page = client.get(f"/human-evaluation/{project['id']}")
+    assert manager_stats_page.status_code == 200
+    assert b"Export LaTeX" in manager_stats_page.data
+    assert b"Sentence Votes" in manager_stats_page.data
+    assert b"data-action=\"export-ranking-latex\"" in manager_stats_page.data
+    assert b"data-action=\"export-pairwise-latex\"" in manager_stats_page.data
+
     public_stats_api = client.get("/api/he/eval-token/stats")
     assert public_stats_api.status_code == 200
     public_stats_payload = public_stats_api.get_json()
@@ -222,6 +234,72 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     }
     assert row_a_cells[model_ids[1]]["display"] == "0.0%"
     assert row_b_cells[model_ids[0]]["display"] == "100.0%"
+
+    sentence_rankings = public_stats_payload.get("sentence_rankings", [])
+    assert len(sentence_rankings) == 1
+    sentence_row = sentence_rankings[0]
+    assert sentence_row["item_ordinal"] == 1
+    assert sentence_row["evaluator_name"] == "Eva"
+    assert sentence_row["missing_rank_one"] is False
+    sentence_cells = {
+        int(cell["rank"]): cell
+        for cell in sentence_row.get("rank_cells", [])
+    }
+    assert sentence_cells[1]["display"] in {"model-b", "model-b.txt"}
+    assert sentence_cells[2]["display"] in {"model-a", "model-a.txt"}
+
+    manager_sentence_votes_page = client.get(
+        f"/human-evaluation/{project['id']}/sentence-rankings"
+    )
+    assert manager_sentence_votes_page.status_code == 200
+    assert b"Vote Editor" in manager_sentence_votes_page.data
+
+    public_sentence_votes_page = client.get("/he/eval-token/sentence-rankings")
+    assert public_sentence_votes_page.status_code == 200
+    assert b"Selected Vote" not in public_sentence_votes_page.data
+
+    with litra_app.db() as conn:
+        rating_id_for_sentence_votes = conn.execute(
+            """
+            SELECT hr.id AS rating_id
+            FROM human_eval_ratings hr
+            JOIN human_eval_links hel ON hel.id = hr.link_id
+            WHERE hel.token = 'eval-token'
+            ORDER BY hr.id
+            LIMIT 1
+            """
+        ).fetchone()["rating_id"]
+
+    edit_sentence_votes_response = client.post(
+        f"/human-evaluation/{project['id']}/sentence-rankings",
+        data={
+            "action": "save_rating_votes",
+            "rating_id": str(rating_id_for_sentence_votes),
+            f"rank_{model_ids[0]}": "1",
+            f"rank_{model_ids[1]}": "2",
+            f"comment_{model_ids[0]}": "sentence-grid-first",
+            f"comment_{model_ids[1]}": "sentence-grid-second",
+            f"error_span_{model_ids[0]}": '{"source_marks":[],"style_marks":[]}',
+            f"error_span_{model_ids[1]}": '{"source_marks":[],"style_marks":[]}',
+        },
+    )
+    assert edit_sentence_votes_response.status_code == 302
+
+    with litra_app.db() as conn:
+        sentence_vote_rows = conn.execute(
+            """
+            SELECT model_id, rank_value, comment
+            FROM human_eval_rankings
+            WHERE rating_id = ?
+            ORDER BY model_id
+            """,
+            (rating_id_for_sentence_votes,),
+        ).fetchall()
+    assert [row["rank_value"] for row in sentence_vote_rows] == [1, 2]
+    assert [row["comment"] for row in sentence_vote_rows] == [
+        "sentence-grid-first",
+        "sentence-grid-second",
+    ]
 
     annotations_page = client.get(f"/human-evaluation/{project['id']}/annotations")
     assert annotations_page.status_code == 200

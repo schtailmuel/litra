@@ -177,7 +177,11 @@
         <h2>Ranking Analysis</h2>
         <p class="muted">Lower ranks are better.</p>
       </div>
-      <small id="evalAnalyticsUpdatedAt">updated: now</small>
+      <div class="page-actions">
+        <a class="button secondary" href="{{ url_for('human_evaluation_sentence_rankings', eval_project_id=project.id) }}">Sentence Votes</a>
+        <button type="button" class="secondary" data-action="export-ranking-latex">Export LaTeX</button>
+        <small id="evalAnalyticsUpdatedAt">updated: now</small>
+      </div>
     </div>
 
     <div class="text-table eval-analytics-table">
@@ -233,6 +237,7 @@
         <h2>Pairwise Win-Rate Heatmap</h2>
         <p class="muted">Cell A→B shows how often A is ranked better than B.</p>
       </div>
+      <button type="button" class="secondary" data-action="export-pairwise-latex">Export LaTeX</button>
     </div>
     <div id="evalPairwiseHeatmap" class="eval-heatmap-wrap">
       {% if analytics_pairwise %}

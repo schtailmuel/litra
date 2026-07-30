@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ project.name }} &middot; Sentence Votes</h1>
+      <p>{{ project.source_language }} &rarr; {{ project.target_language }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_project_detail', eval_project_id=project.id) }}">Back to Project</a>
+    </div>
+  </div>
+
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Sentence Rank Grid</h2>
+        <p class="muted">Click a row to open its vote editor.</p>
+      </div>
+    </div>
+    <div class="eval-heatmap-wrap">
+      {% if sentence_rankings %}
+        <table class="eval-sentence-rank-table eval-sentence-rank-table-interactive">
+          <thead>
+            <tr>
+              <th>Sentence</th>
+              <th>Evaluator</th>
+              {% for rank in rank_levels %}
+                <th>Rank {{ rank }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in sentence_rankings %}
+              {% set row_href = url_for('human_evaluation_sentence_rankings', eval_project_id=project.id, rating=row.rating_id) %}
+              <tr
+                data-row-link="{{ row_href }}"
+                tabindex="0"
+                role="link"
+                class="eval-sentence-link-row{% if row.missing_rank_one %} missing-rank-one{% endif %}{% if selected_rating and selected_rating.rating_id == row.rating_id %} is-selected{% endif %}"
+              >
+                <th title="{{ row.source_text }}">#{{ row.item_ordinal }} · {{ row.source_text_preview }}</th>
+                <td>{{ row.evaluator_name or "evaluator" }}</td>
+                {% for cell in row.rank_cells %}
+                  <td title="{% if cell.models %}{{ cell.models|join(', ') }}{% else %}No model assigned{% endif %}">{{ cell.display }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">Matrix appears after evaluations are submitted.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="form-panel section-gap" id="voteEditor">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Vote Editor</h2>
+        {% if selected_rating %}
+          <p class="muted">
+            Sentence #{{ selected_rating.item_ordinal }} &middot;
+            Evaluator: {{ selected_rating.evaluator_name or "evaluator" }} &middot;
+            Rated: {{ selected_rating.rated_at }}
+          </p>
+        {% else %}
+          <p class="muted">Select a row above to inspect and edit votes.</p>
+        {% endif %}
+      </div>
+      {% if selected_rating %}
+        <a class="button secondary" href="{{ url_for('human_evaluation_sentence_rankings', eval_project_id=project.id) }}">Clear Selection</a>
+      {% endif %}
+    </div>
+
+    {% if selected_rating %}
+      <div class="split-fields">
+        <label>
+          Source
+          <textarea rows="4" readonly>{{ selected_rating.source_text }}</textarea>
+        </label>
+        <label>
+          Reference
+          <textarea rows="4" readonly>{{ selected_rating.reference_text or "No reference provided." }}</textarea>
+        </label>
+      </div>
+
+      <form method="post" class="stack">
+        <input type="hidden" name="action" value="save_rating_votes">
+        <input type="hidden" name="rating_id" value="{{ selected_rating.rating_id }}">
+
+        <div class="eval-vote-editor-grid">
+          {% for vote in selected_rating.votes %}
+            <article class="source-box unframed eval-vote-editor-card">
+              <h3>{{ vote.model_name }}</h3>
+              <label>
+                Translation
+                <textarea rows="4" readonly>{{ vote.output_text }}</textarea>
+              </label>
+              <label>
+                Rank
+                <input
+                  type="number"
+                  name="rank_{{ vote.model_id }}"
+                  min="1"
+                  max="{{ rank_levels|length if rank_levels else 1 }}"
+                  value="{{ vote.rank_value if vote.rank_value is not none else '' }}"
+                  required
+                >
+              </label>
+              <label>
+                Comment
+                <textarea name="comment_{{ vote.model_id }}" rows="3">{{ vote.comment }}</textarea>
+              </label>
+              <label>
+                Annotation payload (JSON)
+                <textarea name="error_span_{{ vote.model_id }}" rows="3">{{ vote.error_span }}</textarea>
+              </label>
+            </article>
+          {% endfor %}
+        </div>
+
+        <div class="editor-actions">
+          <button type="submit">Save Votes</button>
+        </div>
+      </form>
+    {% endif %}
+  </section>
+
+  <script>
+    (function () {
+      function isInteractiveTarget(target) {
+        return !!target.closest("a, button, input, textarea, select, label");
+      }
+
+      document.addEventListener("click", function (event) {
+        const row = event.target.closest("[data-row-link]");
+        if (!row || isInteractiveTarget(event.target)) {
+          return;
+        }
+        const href = row.getAttribute("data-row-link");
+        if (href) {
+          window.location.href = href;
+        }
+      });
+
+      document.addEventListener("keydown", function (event) {
+        const row = event.target.closest("[data-row-link]");
+        if (!row) {
+          return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          const href = row.getAttribute("data-row-link");
+          if (href) {
+            window.location.href = href;
+          }
+        }
+      });
+    })();
+  </script>
+{% endblock %}

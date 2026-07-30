@@ -3689,6 +3689,77 @@ button.danger-text-button:hover {
   border-color: #dce3ea;
 }
 
+.eval-sentence-rank-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0.3rem;
+  min-width: 46rem;
+}
+
+.eval-sentence-rank-table th,
+.eval-sentence-rank-table td {
+  padding: 0.5rem 0.58rem;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  border: 1px solid #e5e9ee;
+  background: #fbfcfd;
+  text-align: center;
+}
+
+.eval-sentence-rank-table thead th {
+  background: #f3f6fa;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.eval-sentence-rank-table tbody th {
+  text-align: left;
+  font-weight: 700;
+  max-width: 34rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eval-sentence-rank-table tbody tr.missing-rank-one th,
+.eval-sentence-rank-table tbody tr.missing-rank-one td {
+  border-color: #f2b8bc;
+  background: #fff5f5;
+}
+
+.eval-sentence-rank-table-interactive tbody tr.eval-sentence-link-row {
+  cursor: pointer;
+}
+
+.eval-sentence-rank-table-interactive tbody tr.eval-sentence-link-row:hover th,
+.eval-sentence-rank-table-interactive tbody tr.eval-sentence-link-row:hover td,
+.eval-sentence-rank-table-interactive tbody tr.eval-sentence-link-row:focus-within th,
+.eval-sentence-rank-table-interactive tbody tr.eval-sentence-link-row:focus-within td {
+  border-color: #c7d6e7;
+  background: #f4f8fc;
+}
+
+.eval-sentence-rank-table-interactive tbody tr.eval-sentence-link-row.is-selected th,
+.eval-sentence-rank-table-interactive tbody tr.eval-sentence-link-row.is-selected td {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.eval-vote-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 0.85rem;
+}
+
+.eval-vote-editor-card {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.eval-vote-editor-card h3 {
+  margin: 0;
+}
+
 .eval-admin-list {
   display: grid;
   gap: 1rem;

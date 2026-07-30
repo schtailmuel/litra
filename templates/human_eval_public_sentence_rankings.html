@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>{{ link.project_name }} &middot; Sentence Votes</h1>
+      <p>{{ link.source_language }} &rarr; {{ link.target_language }} &middot; {{ link.evaluator_name or "evaluator" }}</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_public_stats', token=link.token) }}">Back to Public Stats</a>
+    </div>
+  </div>
+
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Sentence Rank Grid</h2>
+        <p class="muted">Click a row to inspect the source, reference, and translations.</p>
+      </div>
+    </div>
+    <div class="eval-heatmap-wrap">
+      {% if sentence_rankings %}
+        <table class="eval-sentence-rank-table eval-sentence-rank-table-interactive">
+          <thead>
+            <tr>
+              <th>Sentence</th>
+              <th>Evaluator</th>
+              {% for rank in rank_levels %}
+                <th>Rank {{ rank }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in sentence_rankings %}
+              {% set row_href = url_for('human_evaluation_public_sentence_rankings', token=link.token, rating=row.rating_id) %}
+              <tr
+                data-row-link="{{ row_href }}"
+                tabindex="0"
+                role="link"
+                class="eval-sentence-link-row{% if row.missing_rank_one %} missing-rank-one{% endif %}{% if selected_rating and selected_rating.rating_id == row.rating_id %} is-selected{% endif %}"
+              >
+                <th title="{{ row.source_text }}">#{{ row.item_ordinal }} · {{ row.source_text_preview }}</th>
+                <td>{{ row.evaluator_name or "evaluator" }}</td>
+                {% for cell in row.rank_cells %}
+                  <td title="{% if cell.models %}{{ cell.models|join(', ') }}{% else %}No model assigned{% endif %}">{{ cell.display }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">Matrix appears after evaluations are submitted.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if selected_rating %}
+    <section class="form-panel section-gap">
+      <div class="page-head compact-head">
+        <div>
+          <h2>Selected Vote</h2>
+          <p class="muted">
+            Sentence #{{ selected_rating.item_ordinal }} &middot;
+            Evaluator: {{ selected_rating.evaluator_name or "evaluator" }} &middot;
+            Rated: {{ selected_rating.rated_at }}
+          </p>
+        </div>
+      </div>
+
+      <div class="split-fields">
+        <label>
+          Source
+          <textarea rows="4" readonly>{{ selected_rating.source_text }}</textarea>
+        </label>
+        <label>
+          Reference
+          <textarea rows="4" readonly>{{ selected_rating.reference_text or "No reference provided." }}</textarea>
+        </label>
+      </div>
+
+      <div class="eval-vote-editor-grid">
+        {% for vote in selected_rating.votes %}
+          <article class="source-box unframed eval-vote-editor-card">
+            <h3>{{ vote.model_name }}</h3>
+            <label>
+              Translation
+              <textarea rows="4" readonly>{{ vote.output_text }}</textarea>
+            </label>
+            <label>
+              Rank
+              <input type="number" value="{{ vote.rank_value if vote.rank_value is not none else '' }}" readonly>
+            </label>
+            <label>
+              Comment
+              <textarea rows="3" readonly>{{ vote.comment }}</textarea>
+            </label>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  <script>
+    (function () {
+      function isInteractiveTarget(target) {
+        return !!target.closest("a, button, input, textarea, select, label");
+      }
+
+      document.addEventListener("click", function (event) {
+        const row = event.target.closest("[data-row-link]");
+        if (!row || isInteractiveTarget(event.target)) {
+          return;
+        }
+        const href = row.getAttribute("data-row-link");
+        if (href) {
+          window.location.href = href;
+        }
+      });
+
+      document.addEventListener("keydown", function (event) {
+        const row = event.target.closest("[data-row-link]");
+        if (!row) {
+          return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          const href = row.getAttribute("data-row-link");
+          if (href) {
+            window.location.href = href;
+          }
+        }
+      });
+    })();
+  </script>
+{% endblock %}

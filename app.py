@@ -2911,6 +2911,15 @@ def human_eval_ci_display(low, high, decimals=2, percent=False):
     return f"95% CI {low:.{decimals}f}–{high:.{decimals}f}"
 
 
+def human_eval_preview_text(text, max_chars=96):
+    content = str(text or "").replace("\n", " ").strip()
+    if len(content) <= max_chars:
+        return content
+    if max_chars <= 1:
+        return "…"
+    return content[: max_chars - 1].rstrip() + "…"
+
+
 def human_eval_exact_sign_test_pvalue(wins, losses):
     win_count = max(int(wins or 0), 0)
     loss_count = max(int(losses or 0), 0)
@@ -3345,15 +3354,155 @@ def human_eval_analytics_payload(conn, project_id):
             }
         )
 
+    sentence_rankings = []
+    sentence_rows = conn.execute(
+        """
+        SELECT hr.id AS rating_id,
+               hr.created_at AS rated_at,
+               hi.id AS item_id,
+               hi.ordinal,
+               hi.source_text,
+               hel.evaluator_name,
+               hrk.rank_value,
+               hm.model_name
+        FROM human_eval_ratings hr
+        JOIN human_eval_links hel ON hel.id = hr.link_id
+        JOIN human_eval_items hi ON hi.id = hr.item_id
+        JOIN human_eval_rankings hrk ON hrk.rating_id = hr.id
+        JOIN human_eval_models hm ON hm.id = hrk.model_id
+        WHERE hel.project_id = ?
+        ORDER BY hi.ordinal, hr.created_at, hr.id, hrk.rank_value, lower(hm.model_name)
+        """,
+        (project_id,),
+    ).fetchall()
+    grouped_sentence_rankings = {}
+    grouped_sentence_order = []
+    for row in sentence_rows:
+        rating_id = int(row["rating_id"])
+        entry = grouped_sentence_rankings.get(rating_id)
+        if entry is None:
+            entry = {
+                "rating_id": rating_id,
+                "rated_at": row["rated_at"],
+                "item_id": int(row["item_id"]),
+                "item_ordinal": int(row["ordinal"]),
+                "source_text": row["source_text"] or "",
+                "source_text_preview": human_eval_preview_text(row["source_text"]),
+                "evaluator_name": row["evaluator_name"] or "",
+                "rank_models": defaultdict(list),
+            }
+            grouped_sentence_rankings[rating_id] = entry
+            grouped_sentence_order.append(rating_id)
+
+        rank_value = int(row["rank_value"] or 0)
+        if rank_value <= 0:
+            continue
+        entry["rank_models"][rank_value].append(row["model_name"])
+
+    for rating_id in grouped_sentence_order:
+        entry = grouped_sentence_rankings[rating_id]
+        rank_cells = []
+        for rank_value in range(1, max_rank + 1):
+            model_names = sorted(entry["rank_models"].get(rank_value, []), key=lambda value: str(value).lower())
+            rank_cells.append(
+                {
+                    "rank": rank_value,
+                    "models": model_names,
+                    "display": ", ".join(model_names) if model_names else "--",
+                }
+            )
+
+        sentence_rankings.append(
+            {
+                "rating_id": entry["rating_id"],
+                "rated_at": entry["rated_at"],
+                "item_id": entry["item_id"],
+                "item_ordinal": entry["item_ordinal"],
+                "source_text": entry["source_text"],
+                "source_text_preview": entry["source_text_preview"],
+                "evaluator_name": entry["evaluator_name"],
+                "missing_rank_one": not bool(entry["rank_models"].get(1)),
+                "rank_cells": rank_cells,
+            }
+        )
+
     return {
         "rows": analytics_rows,
         "pairwise": pairwise_rows,
+        "sentence_rankings": sentence_rankings,
         "rank_levels": list(range(1, max_rank + 1)),
     }
 
 
 def human_eval_analytics_snapshot(conn, project_id):
     return human_eval_analytics_payload(conn, project_id)["rows"]
+
+
+def human_eval_rating_editor_payload(conn, project_id, rating_id):
+    rating = conn.execute(
+        """
+        SELECT hr.id AS rating_id,
+               hr.item_id,
+               hr.created_at AS rated_at,
+               hi.ordinal,
+               hi.source_text,
+               hi.reference_text,
+               hel.evaluator_name
+        FROM human_eval_ratings hr
+        JOIN human_eval_links hel ON hel.id = hr.link_id
+        JOIN human_eval_items hi ON hi.id = hr.item_id
+        WHERE hr.id = ?
+          AND hel.project_id = ?
+        """,
+        (rating_id, project_id),
+    ).fetchone()
+    if not rating:
+        return None
+
+    vote_rows = conn.execute(
+        """
+        SELECT hm.id AS model_id,
+               hm.model_name,
+               ho.output_text,
+               hrk.rank_value,
+               hrk.comment,
+               hrk.error_span
+        FROM human_eval_models hm
+        LEFT JOIN human_eval_outputs ho
+               ON ho.item_id = ?
+              AND ho.model_id = hm.id
+        LEFT JOIN human_eval_rankings hrk
+               ON hrk.rating_id = ?
+              AND hrk.model_id = hm.id
+        WHERE hm.project_id = ?
+        ORDER BY lower(hm.model_name), hm.model_name
+        """,
+        (rating["item_id"], rating_id, project_id),
+    ).fetchall()
+
+    votes = []
+    for row in vote_rows:
+        votes.append(
+            {
+                "model_id": int(row["model_id"]),
+                "model_name": row["model_name"],
+                "output_text": row["output_text"] or "",
+                "rank_value": int(row["rank_value"]) if row["rank_value"] is not None else None,
+                "comment": row["comment"] or "",
+                "error_span": row["error_span"] or "{}",
+            }
+        )
+
+    return {
+        "rating_id": int(rating["rating_id"]),
+        "item_id": int(rating["item_id"]),
+        "item_ordinal": int(rating["ordinal"]),
+        "rated_at": rating["rated_at"],
+        "evaluator_name": rating["evaluator_name"] or "",
+        "source_text": rating["source_text"] or "",
+        "reference_text": rating["reference_text"] or "",
+        "votes": votes,
+    }
 
 
 def range_label(start_ordinal, end_ordinal):
@@ -5408,9 +5557,150 @@ def human_evaluation_project_detail(eval_project_id):
         links=link_rows,
         analytics_rows=analytics_payload["rows"],
         analytics_pairwise=analytics_payload["pairwise"],
+        analytics_sentence_rankings=analytics_payload["sentence_rankings"],
         analytics_rank_levels=analytics_payload["rank_levels"],
         shared_users=shared_users,
         can_manage_access=can_manage_access,
+    )
+
+
+@app.route("/human-evaluation/<int:eval_project_id>/sentence-rankings", methods=["GET", "POST"])
+def human_evaluation_sentence_rankings(eval_project_id):
+    user = require_login()
+    if not is_db_row(user):
+        return user
+
+    project = human_eval_project_for_user(eval_project_id, user["id"])
+    selected_rating_id = int_or_none(request.args.get("rating"))
+
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action != "save_rating_votes":
+            flash("Unknown sentence-vote action.")
+            return redirect(
+                url_for(
+                    "human_evaluation_sentence_rankings",
+                    eval_project_id=eval_project_id,
+                )
+            )
+
+        rating_id = int_or_none(request.form.get("rating_id"))
+        if not rating_id:
+            flash("Invalid rating selection.")
+            return redirect(
+                url_for(
+                    "human_evaluation_sentence_rankings",
+                    eval_project_id=eval_project_id,
+                )
+            )
+
+        with db() as conn:
+            selected = human_eval_rating_editor_payload(conn, eval_project_id, rating_id)
+            if not selected:
+                flash("Rating not found for this project.")
+                return redirect(
+                    url_for(
+                        "human_evaluation_sentence_rankings",
+                        eval_project_id=eval_project_id,
+                    )
+                )
+
+            model_rows = conn.execute(
+                """
+                SELECT id
+                FROM human_eval_models
+                WHERE project_id = ?
+                ORDER BY lower(model_name), model_name
+                """,
+                (eval_project_id,),
+            ).fetchall()
+            model_ids = [int(row["id"]) for row in model_rows]
+            expected_ranks = list(range(1, len(model_ids) + 1))
+
+            ranking_values = {}
+            for model_id in model_ids:
+                rank_value = int_or_none(request.form.get(f"rank_{model_id}"))
+                if rank_value is None or rank_value not in expected_ranks:
+                    flash("Each model must have a valid rank value.")
+                    return redirect(
+                        url_for(
+                            "human_evaluation_sentence_rankings",
+                            eval_project_id=eval_project_id,
+                            rating=rating_id,
+                        )
+                    )
+                ranking_values[model_id] = rank_value
+
+            for model_id in model_ids:
+                error_span = request.form.get(f"error_span_{model_id}", "")
+                comment = request.form.get(f"comment_{model_id}", "")
+                ranking_row = conn.execute(
+                    """
+                    SELECT id
+                    FROM human_eval_rankings
+                    WHERE rating_id = ?
+                      AND model_id = ?
+                    """,
+                    (rating_id, model_id),
+                ).fetchone()
+                if ranking_row:
+                    conn.execute(
+                        """
+                        UPDATE human_eval_rankings
+                           SET rank_value = ?,
+                               error_span = ?,
+                               comment = ?
+                         WHERE rating_id = ?
+                           AND model_id = ?
+                        """,
+                        (
+                            ranking_values[model_id],
+                            error_span[:HUMAN_EVAL_ERROR_SPAN_MAX_CHARS],
+                            comment[:2000],
+                            rating_id,
+                            model_id,
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO human_eval_rankings
+                            (rating_id, model_id, rank_value, error_span, comment)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            rating_id,
+                            model_id,
+                            ranking_values[model_id],
+                            error_span[:HUMAN_EVAL_ERROR_SPAN_MAX_CHARS],
+                            comment[:2000],
+                        ),
+                    )
+            conn.commit()
+
+        flash("Sentence votes updated.")
+        return redirect(
+            url_for(
+                "human_evaluation_sentence_rankings",
+                eval_project_id=eval_project_id,
+                rating=rating_id,
+            )
+        )
+
+    with db() as conn:
+        analytics_payload = human_eval_analytics_payload(conn, eval_project_id)
+        selected_rating = None
+        if selected_rating_id:
+            selected_rating = human_eval_rating_editor_payload(conn, eval_project_id, selected_rating_id)
+            if not selected_rating:
+                flash("Requested rating was not found.")
+
+    return render_template(
+        "human_eval_sentence_rankings.html",
+        project=project,
+        sentence_rankings=analytics_payload["sentence_rankings"],
+        rank_levels=analytics_payload["rank_levels"],
+        selected_rating=selected_rating,
     )
 
 
@@ -5546,6 +5836,7 @@ def human_evaluation_project_analytics(eval_project_id):
             "updated_at": now_iso(),
             "rows": payload["rows"],
             "pairwise": payload["pairwise"],
+            "sentence_rankings": payload["sentence_rankings"],
             "rank_levels": payload["rank_levels"],
         }
     )
@@ -5569,6 +5860,7 @@ def human_evaluation_public_stats_api(token):
             "updated_at": now_iso(),
             "rows": payload["rows"],
             "pairwise": payload["pairwise"],
+            "sentence_rankings": payload["sentence_rankings"],
             "rank_levels": payload["rank_levels"],
         }
     )
@@ -9706,7 +9998,38 @@ def human_evaluation_public_stats(token):
         link=link,
         analytics_rows=analytics_payload["rows"],
         analytics_pairwise=analytics_payload["pairwise"],
+        analytics_sentence_rankings=analytics_payload["sentence_rankings"],
         analytics_rank_levels=analytics_payload["rank_levels"],
+    )
+
+
+@app.get("/he/<token>/sentence-rankings")
+def human_evaluation_public_sentence_rankings(token):
+    selected_rating_id = int_or_none(request.args.get("rating"))
+
+    with db() as conn:
+        link = human_eval_link_for_token(conn, token)
+        if not link:
+            abort(404)
+        if not human_eval_public_stats_enabled(link):
+            flash("Public stats are disabled for this project.")
+            return redirect(url_for("human_evaluation", token=token))
+
+        analytics_payload = human_eval_analytics_payload(conn, link["project_id"])
+        selected_rating = None
+        if selected_rating_id:
+            selected_rating = human_eval_rating_editor_payload(
+                conn,
+                link["project_id"],
+                selected_rating_id,
+            )
+
+    return render_template(
+        "human_eval_public_sentence_rankings.html",
+        link=link,
+        sentence_rankings=analytics_payload["sentence_rankings"],
+        rank_levels=analytics_payload["rank_levels"],
+        selected_rating=selected_rating,
     )
 
 
