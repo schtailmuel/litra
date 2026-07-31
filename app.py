@@ -11742,15 +11742,97 @@ def recent_submissions(conn, link, limit=3):
                t.updated_at
         FROM translations t
         JOIN segments s ON s.id = t.segment_id
+        JOIN translation_claims c
+          ON c.segment_id = s.id
+         AND lower(c.target_language) = lower(t.target_language)
         WHERE s.project_id = ?
           AND lower(t.target_language) = lower(?)
+          AND c.share_link_id = ?
+          AND c.status = 'completed'
           AND trim(t.target_text) != ''
         ORDER BY t.updated_at DESC, s.ordinal DESC
         LIMIT ?
         """,
-        (link["project_id"], link["target_language"], limit),
+        (link["project_id"], link["target_language"], link["id"], limit),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+@app.delete("/api/t/<token>/segments/<int:segment_id>/submission")
+def api_delete_submission(token, segment_id):
+    with db() as conn:
+        link = conn.execute(
+            "SELECT * FROM share_links WHERE token = ? AND revoked_at IS NULL",
+            (token,),
+        ).fetchone()
+        if not link:
+            abort(404)
+
+        segment = conn.execute(
+            "SELECT * FROM segments WHERE id = ? AND project_id = ?",
+            (segment_id, link["project_id"]),
+        ).fetchone()
+        if not segment:
+            abort(404)
+
+        conn.execute("BEGIN IMMEDIATE")
+        claim = conn.execute(
+            """
+            SELECT *
+            FROM translation_claims
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment_id, link["target_language"]),
+        ).fetchone()
+        if not claim or claim["share_link_id"] != link["id"]:
+            abort(403)
+
+        translation = conn.execute(
+            """
+            SELECT *
+            FROM translations
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment_id, link["target_language"]),
+        ).fetchone()
+        if not translation or not str(translation["target_text"] or "").strip():
+            return (
+                jsonify(
+                    {
+                        "status": "not_found",
+                        "message": "No submitted translation found for this text.",
+                    }
+                ),
+                404,
+            )
+
+        conn.execute("DELETE FROM translations WHERE id = ?", (translation["id"],))
+        conn.execute(
+            """
+            UPDATE translation_claims
+               SET status = 'claimed',
+                   completed_at = NULL
+             WHERE id = ?
+            """,
+            (claim["id"],),
+        )
+        conn.commit()
+
+        remaining, used = link_remaining_credits(conn, link)
+        recent_rows = recent_submissions(conn, link)
+
+    return jsonify(
+        {
+            "status": "deleted",
+            "segment_id": segment_id,
+            "version": 0,
+            "translation_status": "untranslated",
+            "recent_submissions": recent_rows,
+            **assignment_payload(link, used, remaining),
+        }
+    )
 
 
 @app.post("/api/t/<token>/next")

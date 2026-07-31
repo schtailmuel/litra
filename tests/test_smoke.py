@@ -1443,6 +1443,186 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
     assert payload["identifier"] == "msg-1"
 
 
+def test_translator_recent_submissions_can_be_deleted(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("owner",),
+        ).fetchone()["id"]
+
+        project_id = conn.execute(
+            """
+            INSERT INTO projects (owner_id, name, source_language, source_editable, import_mapping, created_at)
+            VALUES (?, ?, ?, 1, '{}', ?)
+            """,
+            (owner_id, "Recent Delete", "English", litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO project_languages (project_id, target_language, created_at) VALUES (?, ?, ?)",
+            (project_id, "German", litra_app.now_iso()),
+        )
+        segment_one = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "msg-1", 1, "English", "Hello one", "", "{}", litra_app.now_iso()),
+        ).lastrowid
+        segment_two = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "msg-2", 2, "English", "Hello two", "", "{}", litra_app.now_iso()),
+        ).lastrowid
+
+        main_link_id = conn.execute(
+            """
+            INSERT INTO share_links
+                (project_id, token, target_language, label, translator_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "tok-main", "German", "", "translator-main", litra_app.now_iso()),
+        ).lastrowid
+        other_link_id = conn.execute(
+            """
+            INSERT INTO share_links
+                (project_id, token, target_language, label, translator_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "tok-other", "German", "", "translator-other", litra_app.now_iso()),
+        ).lastrowid
+
+        conn.execute(
+            """
+            INSERT INTO translation_claims
+                (share_link_id, segment_id, target_language, translator_name, status, claimed_at, completed_at)
+            VALUES (?, ?, ?, ?, 'completed', ?, ?)
+            """,
+            (
+                main_link_id,
+                segment_one,
+                "German",
+                "translator-main",
+                litra_app.now_iso(),
+                litra_app.now_iso(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO translation_claims
+                (share_link_id, segment_id, target_language, translator_name, status, claimed_at, completed_at)
+            VALUES (?, ?, ?, ?, 'completed', ?, ?)
+            """,
+            (
+                other_link_id,
+                segment_two,
+                "German",
+                "translator-other",
+                litra_app.now_iso(),
+                litra_app.now_iso(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations
+                (segment_id, target_language, target_text, status, qa_warnings, version, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                segment_one,
+                "German",
+                "Hallo eins",
+                "submitted",
+                "[]",
+                1,
+                "translator-main",
+                litra_app.now_iso(),
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations
+                (segment_id, target_language, target_text, status, qa_warnings, version, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                segment_two,
+                "German",
+                "Hallo zwei",
+                "submitted",
+                "[]",
+                1,
+                "translator-other",
+                litra_app.now_iso(),
+            ),
+        )
+        conn.commit()
+
+    client = litra_app.app.test_client()
+
+    status_before = client.get("/api/t/tok-main/status")
+    assert status_before.status_code == 200
+    status_before_payload = status_before.get_json()
+    assert status_before_payload["submitted_assignments"] == 1
+    assert [row["id"] for row in status_before_payload["recent_submissions"]] == [segment_one]
+
+    forbidden_delete = client.delete(f"/api/t/tok-main/segments/{segment_two}/submission")
+    assert forbidden_delete.status_code == 403
+
+    delete_response = client.delete(f"/api/t/tok-main/segments/{segment_one}/submission")
+    assert delete_response.status_code == 200
+    delete_payload = delete_response.get_json()
+    assert delete_payload["status"] == "deleted"
+    assert delete_payload["segment_id"] == segment_one
+    assert delete_payload["submitted_assignments"] == 0
+    assert delete_payload["recent_submissions"] == []
+
+    with litra_app.db() as conn:
+        translation_after_delete = conn.execute(
+            """
+            SELECT id
+            FROM translations
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment_one, "German"),
+        ).fetchone()
+        claim_after_delete = conn.execute(
+            """
+            SELECT status, completed_at
+            FROM translation_claims
+            WHERE share_link_id = ?
+              AND segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (main_link_id, segment_one, "German"),
+        ).fetchone()
+
+    assert translation_after_delete is None
+    assert claim_after_delete["status"] == "claimed"
+    assert claim_after_delete["completed_at"] is None
+
+    status_after = client.get("/api/t/tok-main/status")
+    assert status_after.status_code == 200
+    status_after_payload = status_after.get_json()
+    assert status_after_payload["submitted_assignments"] == 0
+    assert status_after_payload["recent_submissions"] == []
+
+
 def test_translation_data_filters_by_warning_code_and_project_rows_clickable(
     monkeypatch, tmp_path
 ):

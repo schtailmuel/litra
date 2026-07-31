@@ -491,6 +491,9 @@ function updateRecentSubmissions(rows = []) {
     return;
   }
   rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "recent-shortcut-item";
+
     const link = document.createElement("a");
     link.className = "recent-shortcut";
     link.href = `${translationsBase}/${row.id}?back=work`;
@@ -501,8 +504,63 @@ function updateRecentSubmissions(rows = []) {
     detail.textContent = row.updated_at || "submitted";
 
     link.append(title, detail);
-    els.recentSubmissions.append(link);
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "secondary danger-text-button recent-shortcut-delete";
+    deleteButton.dataset.recentDelete = String(row.id);
+    deleteButton.textContent = "Delete";
+    deleteButton.setAttribute(
+      "aria-label",
+      `Delete submission for ${row.identifier || `segment ${row.id}`}`
+    );
+
+    item.append(link, deleteButton);
+    els.recentSubmissions.append(item);
   });
+}
+
+async function deleteRecentSubmission(segmentId) {
+  const numericSegmentId = Number.parseInt(segmentId, 10);
+  if (!Number.isFinite(numericSegmentId) || numericSegmentId <= 0) {
+    return;
+  }
+  if (!window.confirm("Delete this submission from your recent list?")) {
+    return;
+  }
+
+  setSaveState("Deleting submission");
+  const response = await fetch(apiUrl(`/segments/${numericSegmentId}/submission`), {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    setSaveState(data.message || "Delete failed", "conflict");
+    return;
+  }
+
+  const data = await response.json();
+  updateAssignmentStatus(data);
+  updateRecentSubmissions(data.recent_submissions || []);
+
+  if (state.currentSegment && Number(state.currentSegment.id) === numericSegmentId) {
+    state.currentSegment.target_text = "";
+    state.currentSegment.draft_text = "";
+    state.currentSegment.target_instructions = "";
+    state.currentSegment.draft_instructions = "";
+    state.currentSegment.comment = "";
+    state.currentSegment.draft_comment = "";
+    state.currentSegment.version = Number(data.version || 0);
+    state.currentSegment.status = data.translation_status || "untranslated";
+    state.legacyComment = "";
+    state.dirty = false;
+    setTranslationPayload("", "");
+    state.draftSnapshot = translationSnapshot({ target_text: "", target_instructions: "" });
+    renderSegment(state.currentSegment);
+  }
+
+  setSaveState("Submission deleted", "saved");
 }
 
 function commentTimestamp(comment) {
@@ -963,6 +1021,14 @@ els.commentList.addEventListener("click", (event) => {
   if (deleteButton) {
     deleteComment(deleteButton.dataset.commentDelete);
   }
+});
+els.recentSubmissions?.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest("[data-recent-delete]");
+  if (!deleteButton) {
+    return;
+  }
+  event.preventDefault();
+  deleteRecentSubmission(deleteButton.dataset.recentDelete);
 });
 els.flagSourceButton.addEventListener("click", () => {
   els.sourceFlagPanel.classList.toggle("hidden");

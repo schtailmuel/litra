@@ -2337,6 +2337,13 @@ button.danger-text-button:hover {
   overflow: auto;
 }
 
+.recent-shortcut-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.35rem;
+  align-items: start;
+}
+
 .recent-shortcut {
   display: flex;
   flex-direction: column;
@@ -2364,6 +2371,12 @@ button.danger-text-button:hover {
   font-size: 0.78rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.recent-shortcut-delete {
+  min-height: 2.05rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
 }
 
 .submitted-translations-link {
