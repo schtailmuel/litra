@@ -260,6 +260,11 @@
           <option value="draft">Post-editing draft: translators can claim</option>
         </select>
       </label>
+      <label class="checkbox-label source-edit-toggle">
+        <input type="checkbox" name="override_existing_translations" value="1">
+        Override existing translations (default off)
+      </label>
+      <small class="muted">When disabled, the import only adds translations that do not exist yet for this language.</small>
       <div class="upload-schema-panel">
         <strong id="translationSchemaStatus">Choose a file to detect translation keys.</strong>
         <div class="upload-schema-summary" id="translationSchemaSummary">

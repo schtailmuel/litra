@@ -6,7 +6,10 @@
       <h1>Submitted Translations</h1>
       <p>{{ link.project_name }} &middot; {{ link.source_language }} &rarr; {{ link.target_language }} &middot; {{ rows|length }} entries</p>
     </div>
-    <a class="button secondary" href="{{ url_for('translate', token=link.token) }}">Back to Work</a>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('translator_export_my_submissions_jsonl', token=link.token) }}">Download My Submissions JSONL</a>
+      <a class="button secondary" href="{{ url_for('translate', token=link.token) }}">Back to Work</a>
+    </div>
   </div>
 
   <section class="form-panel">

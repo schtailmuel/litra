@@ -1083,6 +1083,179 @@ def test_project_detail_recompute_project_qa(monkeypatch, tmp_path):
     assert "special_symbols" in warning_codes
 
 
+def test_upload_language_translations_add_only_by_default_and_override_opt_in(
+    monkeypatch, tmp_path
+):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("owner",),
+        ).fetchone()["id"]
+
+        project_id = conn.execute(
+            """
+            INSERT INTO projects (owner_id, name, source_language, source_editable, import_mapping, created_at)
+            VALUES (?, ?, ?, 1, '{}', ?)
+            """,
+            (owner_id, "Import Override", "English", litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO project_languages (project_id, target_language, created_at) VALUES (?, ?, ?)",
+            (project_id, "German", litra_app.now_iso()),
+        )
+
+        segment_1 = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "msg-1", 1, "English", "Hello", "", "{}", litra_app.now_iso()),
+        ).lastrowid
+        segment_2 = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "msg-2", 2, "English", "Bye", "", "{}", litra_app.now_iso()),
+        ).lastrowid
+
+        conn.execute(
+            """
+            INSERT INTO translations
+                (segment_id, target_language, target_text, comment, status, qa_warnings, version, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                segment_1,
+                "German",
+                "ALT",
+                "existing",
+                "submitted",
+                "[]",
+                1,
+                "seed",
+                litra_app.now_iso(),
+            ),
+        )
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = owner_id
+
+    page = client.get(f"/projects/{project_id}")
+    assert page.status_code == 200
+    assert b"override_existing_translations" in page.data
+
+    add_only_import = client.post(
+        f"/projects/{project_id}",
+        data={
+            "action": "upload_language_translations",
+            "upload_target_language": "German",
+            "message_id_key": "message_id",
+            "translation_text_key": "translation",
+            "translation_comment_key": "",
+            "translated_instruction_key": "",
+            "translation_language_key": "",
+            "uploaded_translation_status": "submitted",
+            "translation_jsonl": (
+                BytesIO(
+                    (
+                        '{"message_id":"msg-1","translation":"NEU-1"}\n'
+                        '{"message_id":"msg-2","translation":"NEU-2"}\n'
+                    ).encode("utf-8")
+                ),
+                "import.jsonl",
+            ),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert add_only_import.status_code == 200
+    assert b"1 created, 0 updated, 1 existing kept" in add_only_import.data
+
+    with litra_app.db() as conn:
+        rows = conn.execute(
+            """
+            SELECT s.identifier,
+                   t.target_text,
+                   t.comment
+            FROM translations t
+            JOIN segments s ON s.id = t.segment_id
+            WHERE s.project_id = ?
+              AND lower(t.target_language) = lower('German')
+            ORDER BY s.ordinal
+            """,
+            (project_id,),
+        ).fetchall()
+
+    assert len(rows) == 2
+    assert rows[0]["identifier"] == "msg-1"
+    assert rows[0]["target_text"] == "ALT"
+    assert rows[0]["comment"] == "existing"
+    assert rows[1]["identifier"] == "msg-2"
+    assert rows[1]["target_text"] == "NEU-2"
+
+    override_import = client.post(
+        f"/projects/{project_id}",
+        data={
+            "action": "upload_language_translations",
+            "upload_target_language": "German",
+            "message_id_key": "message_id",
+            "translation_text_key": "translation",
+            "translation_comment_key": "",
+            "translated_instruction_key": "",
+            "translation_language_key": "",
+            "uploaded_translation_status": "submitted",
+            "override_existing_translations": "1",
+            "translation_jsonl": (
+                BytesIO(
+                    (
+                        '{"message_id":"msg-1","translation":"OVERRIDE-1"}\n'
+                        '{"message_id":"msg-2","translation":"OVERRIDE-2"}\n'
+                    ).encode("utf-8")
+                ),
+                "import-override.jsonl",
+            ),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert override_import.status_code == 200
+    assert b"0 created, 2 updated, 0 existing kept" in override_import.data
+
+    with litra_app.db() as conn:
+        overridden_rows = conn.execute(
+            """
+            SELECT s.identifier,
+                   t.target_text
+            FROM translations t
+            JOIN segments s ON s.id = t.segment_id
+            WHERE s.project_id = ?
+              AND lower(t.target_language) = lower('German')
+            ORDER BY s.ordinal
+            """,
+            (project_id,),
+        ).fetchall()
+    assert [row["target_text"] for row in overridden_rows] == [
+        "OVERRIDE-1",
+        "OVERRIDE-2",
+    ]
+
+
 def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_path):
     litra_app = importlib.import_module("app")
     monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
@@ -1186,6 +1359,21 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
     assert translator_view.status_code == 200
     assert b"msg-1" in translator_view.data
     assert b"thread comment" in translator_view.data
+    assert b"Download My Submissions JSONL" in translator_view.data
+
+    translator_workspace = client.get("/t/tok-1")
+    assert translator_workspace.status_code == 200
+    assert b"Download My Submissions JSONL" in translator_workspace.data
+
+    translator_export = client.get("/t/tok-1/translations/export-jsonl")
+    assert translator_export.status_code == 200
+    assert "application/x-ndjson" in translator_export.headers.get("Content-Type", "")
+    export_lines = [line for line in translator_export.get_data(as_text=True).splitlines() if line.strip()]
+    assert len(export_lines) == 1
+    export_payload = json.loads(export_lines[0])
+    assert export_payload["identifier"] == "msg-1"
+    assert export_payload["target_text"] == "Hallo Welt"
+    assert export_payload["updated_by"] == "translator"
 
     reviewer_fast_list = client.get("/r/rev-1/texts?comments=1")
     assert reviewer_fast_list.status_code == 200

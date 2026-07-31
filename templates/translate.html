@@ -48,7 +48,10 @@
           <div id="recentSubmissions" class="recent-shortcut-list">
             <span class="muted">None yet.</span>
           </div>
-          <a class="submitted-translations-link" href="{{ url_for('translator_translations', token=link.token) }}">Submitted Translations</a>
+          <div class="recent-submission-actions">
+            <a class="submitted-translations-link" href="{{ url_for('translator_translations', token=link.token) }}">Submitted Translations</a>
+            <a class="button secondary submitted-translations-backup-link" href="{{ url_for('translator_export_my_submissions_jsonl', token=link.token) }}">Download My Submissions JSONL</a>
+          </div>
         </div>
       </aside>
 

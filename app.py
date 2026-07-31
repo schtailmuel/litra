@@ -3701,10 +3701,17 @@ def row_to_dict(row):
     return dict(row) if row else None
 
 
+def db_row_value(row, key, default=None):
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
 def metadata_dict(raw):
     try:
         value = json.loads(raw or "{}")
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         return {}
     return value if isinstance(value, dict) else {}
 
@@ -3819,7 +3826,7 @@ def source_language_rows(conn, project_id):
 def json_list(raw):
     try:
         value = json.loads(raw or "[]")
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         return []
     return value if isinstance(value, list) else []
 
@@ -3841,19 +3848,22 @@ def grouped_source_flags(conn, segment_ids, languages=None):
             )
             params.extend(clean_languages)
 
-    rows = conn.execute(
-        f"""
-        SELECT segment_id,
-               target_language,
-               translator_name,
-               note,
-               created_at
-        FROM source_flags
-        WHERE {" AND ".join(where)}
-        ORDER BY created_at, id
-        """,
-        tuple(params),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT segment_id,
+                   target_language,
+                   translator_name,
+                   note,
+                   created_at
+            FROM source_flags
+            WHERE {" AND ".join(where)}
+            ORDER BY created_at, id
+            """,
+            tuple(params),
+        ).fetchall()
+    except Exception:
+        return {}
 
     grouped = {}
     for row in rows:
@@ -6692,6 +6702,7 @@ def project_detail(project_id):
                 comment_key = request.form.get("translation_comment_key", "")
                 instruction_key = request.form.get("translated_instruction_key", "")
                 language_key = request.form.get("translation_language_key", "")
+                override_existing = bool_int(request.form.get("override_existing_translations")) == 1
                 import_status = request.form.get(
                     "uploaded_translation_status",
                     "submitted",
@@ -6736,6 +6747,7 @@ def project_detail(project_id):
                 stamp = now_iso()
                 created_count = 0
                 updated_count = 0
+                skipped_existing_count = 0
                 empty_count = 0
                 unmatched_count = 0
                 unmatched_examples = []
@@ -6786,6 +6798,9 @@ def project_detail(project_id):
                         row["target_instructions"],
                     )
                     if current:
+                        if not override_existing:
+                            skipped_existing_count += 1
+                            continue
                         conn.execute(
                             """
                             UPDATE translations
@@ -6868,6 +6883,7 @@ def project_detail(project_id):
                 flash(
                     "Translations uploaded: "
                     f"{created_count} created, {updated_count} updated, "
+                    f"{skipped_existing_count} existing kept, "
                     f"{unmatched_count} unmatched, {empty_count} empty."
                     + (
                         f" Unmatched IDs: {', '.join(unmatched_examples)}."
@@ -11008,6 +11024,212 @@ def translator_translations(token):
         ).fetchall()
 
     return render_template("translator_translations.html", link=link, rows=rows, filters=filters)
+
+
+@app.get("/t/<token>/translations/export-jsonl")
+def translator_export_my_submissions_jsonl(token):
+    with db() as conn:
+        link = link_for_token(conn, token)
+        if not link:
+            abort(404)
+
+        if conn.is_postgres:
+            translation_columns = {
+                row["column_name"]
+                for row in conn.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'translations'
+                    """
+                ).fetchall()
+            }
+            segment_columns = {
+                row["column_name"]
+                for row in conn.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'segments'
+                    """
+                ).fetchall()
+            }
+        else:
+            translation_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(translations)").fetchall()
+            }
+            segment_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(segments)").fetchall()
+            }
+
+        project_id = db_row_value(link, "project_id")
+        target_language = db_row_value(link, "target_language", "")
+        start_ordinal = db_row_value(link, "start_ordinal")
+        end_ordinal = db_row_value(link, "end_ordinal")
+        translator_name = link_translator_name(link)
+
+        target_instructions_select = (
+            "COALESCE(t.target_instructions, '') AS target_instructions"
+            if "target_instructions" in translation_columns
+            else "'' AS target_instructions"
+        )
+        comment_select = (
+            "COALESCE(t.comment, '') AS comment"
+            if "comment" in translation_columns
+            else "'' AS comment"
+        )
+        status_select = (
+            "COALESCE(t.status, 'submitted') AS status"
+            if "status" in translation_columns
+            else "'submitted' AS status"
+        )
+        qa_warnings_select = (
+            "COALESCE(t.qa_warnings, '[]') AS qa_warnings"
+            if "qa_warnings" in translation_columns
+            else "'[]' AS qa_warnings"
+        )
+        version_select = (
+            "COALESCE(t.version, 0) AS version"
+            if "version" in translation_columns
+            else "0 AS version"
+        )
+        updated_by_select = (
+            "COALESCE(t.updated_by, '') AS updated_by"
+            if "updated_by" in translation_columns
+            else "'' AS updated_by"
+        )
+        updated_at_select = (
+            "t.updated_at AS updated_at"
+            if "updated_at" in translation_columns
+            else "NULL AS updated_at"
+        )
+        updated_by_filter = (
+            "lower(COALESCE(t.updated_by, '')) = lower(?)"
+            if "updated_by" in translation_columns
+            else "1=1"
+        )
+        has_ordinal = "ordinal" in segment_columns
+        ordinal_filters = []
+        if has_ordinal and start_ordinal is not None:
+            ordinal_filters.append("s.ordinal >= ?")
+        if has_ordinal and end_ordinal is not None:
+            ordinal_filters.append("s.ordinal <= ?")
+        ordinal_filter_sql = " AND ".join(ordinal_filters) if ordinal_filters else "1=1"
+        if "updated_at" in translation_columns and has_ordinal:
+            order_by_clause = "t.updated_at DESC, s.ordinal"
+        elif "updated_at" in translation_columns:
+            order_by_clause = "t.updated_at DESC, s.id"
+        elif has_ordinal:
+            order_by_clause = "s.ordinal"
+        else:
+            order_by_clause = "s.id"
+
+        source_language_select = (
+            "s.source_language AS source_language"
+            if "source_language" in segment_columns
+            else "'' AS source_language"
+        )
+        source_text_select = (
+            "s.source_text AS source_text"
+            if "source_text" in segment_columns
+            else "'' AS source_text"
+        )
+        instructions_select = (
+            "s.instructions AS instructions"
+            if "instructions" in segment_columns
+            else "'' AS instructions"
+        )
+        metadata_select = (
+            "s.metadata AS metadata"
+            if "metadata" in segment_columns
+            else "'{}' AS metadata"
+        )
+
+        query_params = [project_id, target_language]
+        if "updated_by" in translation_columns:
+            query_params.append(translator_name)
+        if has_ordinal and start_ordinal is not None:
+            query_params.append(start_ordinal)
+        if has_ordinal and end_ordinal is not None:
+            query_params.append(end_ordinal)
+
+        rows = conn.execute(
+            f"""
+            SELECT s.id AS segment_id,
+                   s.identifier,
+                   {source_language_select},
+                   {source_text_select},
+                   {instructions_select},
+                   {metadata_select},
+                   t.target_language,
+                   t.target_text,
+                   {target_instructions_select},
+                   {comment_select},
+                   {status_select},
+                   {qa_warnings_select},
+                   {version_select},
+                   {updated_by_select},
+                   {updated_at_select}
+            FROM translations t
+            JOIN segments s ON s.id = t.segment_id
+            WHERE s.project_id = ?
+              AND lower(t.target_language) = lower(?)
+              AND trim(t.target_text) != ''
+              AND {updated_by_filter}
+              AND {ordinal_filter_sql}
+            ORDER BY {order_by_clause}
+            """,
+            tuple(query_params),
+        ).fetchall()
+        source_flags = grouped_source_flags(
+            conn,
+            [int(row["segment_id"]) for row in rows],
+            [target_language],
+        )
+
+    export_rows = []
+    for row in rows:
+        row_dict = dict(row)
+        segment_id = int(row_dict.pop("segment_id"))
+        metadata = metadata_dict(row_dict.pop("metadata", "{}"))
+        flags = source_flags.get(segment_id, [])
+        metadata.update(
+            {
+                "identifier": row_dict["identifier"],
+                "source_language": row_dict["source_language"],
+                "source_text": row_dict["source_text"],
+                "instructions": row_dict["instructions"],
+                "target_language": row_dict["target_language"],
+                "target_text": row_dict["target_text"],
+                "target_instructions": row_dict["target_instructions"],
+                "comment": row_dict["comment"],
+                "status": row_dict["status"],
+                "qa_warnings": json_list(row_dict["qa_warnings"]),
+                "version": int(row_dict["version"] or 0),
+                "updated_by": row_dict["updated_by"],
+                "updated_at": row_dict["updated_at"],
+                "source_flags": flags,
+                "source_flag_count": len(flags),
+            }
+        )
+        export_rows.append(metadata)
+
+    lines = "\n".join(json.dumps(row, ensure_ascii=False) for row in export_rows)
+    if lines:
+        lines = f"{lines}\n"
+
+    translator_slug = secure_filename(link_translator_name(link)) or "translator"
+    target_slug = secure_filename(str(target_language)) or "target"
+    filename = secure_filename(f"submissions-{translator_slug}-{target_slug}.jsonl")
+    return app.response_class(
+        lines,
+        mimetype="application/x-ndjson",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @app.route("/t/<token>/translations/<int:segment_id>", methods=["GET", "POST"])

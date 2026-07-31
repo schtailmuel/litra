@@ -2331,17 +2331,27 @@ button.danger-text-button:hover {
 
 .recent-shortcut-list {
   display: grid;
+  align-content: start;
+  grid-auto-rows: min-content;
   gap: 0.45rem;
   overflow: auto;
 }
 
 .recent-shortcut {
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.6rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  padding: 0.48rem 0.56rem;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #fff;
+}
+
+.recent-shortcut strong {
+  overflow: hidden;
+  font-size: 0.83rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recent-shortcut:hover {
@@ -2369,6 +2379,17 @@ button.danger-text-button:hover {
 
 .submitted-translations-link:hover {
   text-decoration: underline;
+}
+
+.recent-submission-actions {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+}
+
+.submitted-translations-backup-link {
+  width: 100%;
+  justify-content: center;
 }
 
 .segment-list {
