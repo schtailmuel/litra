@@ -7,6 +7,7 @@
       <p>{{ project.source_language }} &rarr; {{ project.target_language }}</p>
     </div>
     <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_download_sentence_votes_csv', eval_project_id=project.id) }}">Download CSV</a>
       <a class="button secondary" href="{{ url_for('human_evaluation_project_detail', eval_project_id=project.id) }}">Back to Project</a>
     </div>
   </div>

@@ -1,7 +1,8 @@
+import csv
 import importlib
 import json
 import zipfile
-from io import BytesIO
+from io import BytesIO, StringIO
 
 
 def test_healthz_uses_sqlite_by_default(monkeypatch, tmp_path):
@@ -366,10 +367,57 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     )
     assert manager_sentence_votes_page.status_code == 200
     assert b"Vote Editor" in manager_sentence_votes_page.data
+    assert b"Download CSV" in manager_sentence_votes_page.data
+
+    manager_sentence_votes_csv = client.get(
+        f"/human-evaluation/{project['id']}/download-sentence-votes-csv"
+    )
+    assert manager_sentence_votes_csv.status_code == 200
+    assert "text/csv" in manager_sentence_votes_csv.headers.get("Content-Type", "")
+    sentence_vote_csv_rows = list(
+        csv.DictReader(StringIO(manager_sentence_votes_csv.get_data(as_text=True)))
+    )
+    assert len(sentence_vote_csv_rows) == 1
+    sentence_vote_csv_row = sentence_vote_csv_rows[0]
+    assert sentence_vote_csv_row["Sentence ID"] == "1"
+    assert sentence_vote_csv_row["Source Text"] == "Hallo bearbeitet"
+    assert sentence_vote_csv_row["Evaluator"] == "Eva"
+    rank_values = {
+        sentence_vote_csv_row["Rank 1"],
+        sentence_vote_csv_row["Rank 2"],
+    }
+    assert rank_values in (
+        {"model-a", "model-b"},
+        {"model-a.txt", "model-b.txt"},
+    )
+
+    translation_cells = {
+        key: value
+        for key, value in sentence_vote_csv_row.items()
+        if key.startswith("Translation (")
+    }
+    assert len(translation_cells) == 2
+    assert {"Model A updated", "Model B updated"} == set(translation_cells.values())
+
+    comment_cells = {
+        key: value
+        for key, value in sentence_vote_csv_row.items()
+        if key.startswith("Comment (")
+    }
+    assert len(comment_cells) == 2
+    assert {"updated-first", "updated-second"} == set(comment_cells.values())
 
     public_sentence_votes_page = client.get("/he/eval-token/sentence-rankings")
     assert public_sentence_votes_page.status_code == 200
     assert b"Selected Vote" not in public_sentence_votes_page.data
+    assert b"Download CSV" in public_sentence_votes_page.data
+
+    public_sentence_votes_csv = client.get("/he/eval-token/download-sentence-votes-csv")
+    assert public_sentence_votes_csv.status_code == 200
+    public_sentence_vote_csv_rows = list(
+        csv.DictReader(StringIO(public_sentence_votes_csv.get_data(as_text=True)))
+    )
+    assert public_sentence_vote_csv_rows == sentence_vote_csv_rows
 
     with litra_app.db() as conn:
         rating_id_for_sentence_votes = conn.execute(

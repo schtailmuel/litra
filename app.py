@@ -3109,6 +3109,140 @@ def human_eval_export_payload(conn, project, link_id=None):
     }
 
 
+def human_eval_sentence_votes_csv_body(conn, project_id, link_id=None):
+    model_rows = conn.execute(
+        """
+        SELECT id,
+               model_name
+        FROM human_eval_models
+        WHERE project_id = ?
+        ORDER BY lower(model_name), model_name
+        """,
+        (project_id,),
+    ).fetchall()
+    model_ids = [int(row["id"]) for row in model_rows]
+    rank_levels = list(range(1, len(model_rows) + 1))
+
+    where = ["hel.project_id = ?"]
+    params = [project_id]
+    if link_id is not None:
+        where.append("hel.id = ?")
+        params.append(link_id)
+    where_sql = " AND ".join(where)
+
+    rows = conn.execute(
+        f"""
+        SELECT hr.id AS rating_id,
+               hr.created_at AS rated_at,
+               hel.evaluator_name,
+               hi.id AS item_id,
+               hi.ordinal,
+               hi.source_text,
+               hi.reference_text,
+               hm.id AS model_id,
+               hm.model_name,
+               ho.output_text,
+               hrk.rank_value,
+               hrk.comment
+        FROM human_eval_ratings hr
+        JOIN human_eval_links hel ON hel.id = hr.link_id
+        JOIN human_eval_items hi ON hi.id = hr.item_id
+        JOIN human_eval_models hm ON hm.project_id = hel.project_id
+        LEFT JOIN human_eval_outputs ho
+               ON ho.item_id = hi.id
+              AND ho.model_id = hm.id
+        LEFT JOIN human_eval_rankings hrk
+               ON hrk.rating_id = hr.id
+              AND hrk.model_id = hm.id
+        WHERE {where_sql}
+        ORDER BY hi.ordinal,
+                 hr.created_at,
+                 hr.id,
+                 lower(hm.model_name),
+                 hm.model_name
+        """,
+        tuple(params),
+    ).fetchall()
+
+    grouped = {}
+    ordered_rating_ids = []
+    for row in rows:
+        rating_id = int(row["rating_id"])
+        entry = grouped.get(rating_id)
+        if entry is None:
+            entry = {
+                "rating_id": rating_id,
+                "rated_at": row["rated_at"] or "",
+                "evaluator_name": row["evaluator_name"] or "",
+                "item_id": int(row["item_id"]),
+                "item_ordinal": int(row["ordinal"]),
+                "source_text": row["source_text"] or "",
+                "reference_text": row["reference_text"] or "",
+                "models": {},
+            }
+            grouped[rating_id] = entry
+            ordered_rating_ids.append(rating_id)
+
+        entry["models"][int(row["model_id"])] = {
+            "model_name": row["model_name"] or "",
+            "output_text": row["output_text"] or "",
+            "rank_value": int(row["rank_value"]) if row["rank_value"] is not None else None,
+            "comment": row["comment"] or "",
+        }
+
+    output = StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow(
+        [
+            "Sentence ID",
+            "Source Text",
+            "Evaluator",
+            "Rated at",
+            "Rating ID",
+            *[f"Rank {rank_value}" for rank_value in rank_levels],
+            *[f"Translation ({row['model_name']})" for row in model_rows],
+            *[f"Comment ({row['model_name']})" for row in model_rows],
+        ]
+    )
+
+    for rating_id in ordered_rating_ids:
+        entry = grouped[rating_id]
+        rank_models = defaultdict(list)
+        translation_cells = []
+        comment_cells = []
+        for model_id in model_ids:
+            model_entry = entry["models"].get(model_id, {})
+            rank_value = model_entry.get("rank_value")
+            model_name = model_entry.get("model_name", "")
+            if rank_value is not None and int(rank_value) > 0:
+                rank_models[int(rank_value)].append(model_name)
+            translation_cells.append(model_entry.get("output_text", ""))
+            comment_cells.append(model_entry.get("comment", ""))
+
+        rank_cells = []
+        for rank_value in rank_levels:
+            model_names = sorted(
+                (name for name in rank_models.get(rank_value, []) if name),
+                key=lambda value: str(value).lower(),
+            )
+            rank_cells.append(", ".join(model_names) if model_names else "--")
+
+        writer.writerow(
+            [
+                entry["item_ordinal"],
+                entry["source_text"],
+                entry["evaluator_name"],
+                entry["rated_at"],
+                entry["rating_id"],
+                *rank_cells,
+                *translation_cells,
+                *comment_cells,
+            ]
+        )
+
+    return output.getvalue()
+
+
 def human_eval_analytics_payload(conn, project_id):
     model_count = int(
         conn.execute(
@@ -6142,6 +6276,27 @@ def human_evaluation_sentence_rankings(eval_project_id):
         sentence_rankings=analytics_payload["sentence_rankings"],
         rank_levels=analytics_payload["rank_levels"],
         selected_rating=selected_rating,
+    )
+
+
+@app.get("/human-evaluation/<int:eval_project_id>/download-sentence-votes-csv")
+def human_evaluation_download_sentence_votes_csv(eval_project_id):
+    user = require_login()
+    if not is_db_row(user):
+        return user
+
+    project = human_eval_project_for_user(eval_project_id, user["id"])
+    with db() as conn:
+        body = human_eval_sentence_votes_csv_body(conn, eval_project_id)
+
+    filename = safe_download_name(
+        f"{project['name']}-sentence-votes.csv",
+        f"human-eval-{eval_project_id}-sentence-votes.csv",
+    )
+    return app.response_class(
+        body,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
@@ -10477,6 +10632,29 @@ def human_evaluation_public_sentence_rankings(token):
         sentence_rankings=analytics_payload["sentence_rankings"],
         rank_levels=analytics_payload["rank_levels"],
         selected_rating=selected_rating,
+    )
+
+
+@app.get("/he/<token>/download-sentence-votes-csv")
+def human_evaluation_public_download_sentence_votes_csv(token):
+    with db() as conn:
+        link = human_eval_link_for_token(conn, token)
+        if not link:
+            abort(404)
+        if not human_eval_public_stats_enabled(link):
+            flash("Public stats are disabled for this project.")
+            return redirect(url_for("human_evaluation", token=token))
+
+        body = human_eval_sentence_votes_csv_body(conn, link["project_id"])
+
+    filename = safe_download_name(
+        f"{link['project_name']}-sentence-votes.csv",
+        "sentence-votes.csv",
+    )
+    return app.response_class(
+        body,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 

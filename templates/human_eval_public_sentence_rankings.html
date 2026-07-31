@@ -7,6 +7,7 @@
       <p>{{ link.source_language }} &rarr; {{ link.target_language }} &middot; {{ link.evaluator_name or "evaluator" }}</p>
     </div>
     <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('human_evaluation_public_download_sentence_votes_csv', token=link.token) }}">Download CSV</a>
       <a class="button secondary" href="{{ url_for('human_evaluation_public_stats', token=link.token) }}">Back to Public Stats</a>
     </div>
   </div>
