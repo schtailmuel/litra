@@ -5994,7 +5994,7 @@ def human_evaluation_sentence_rankings(eval_project_id):
 
     if request.method == "POST":
         action = request.form.get("action", "")
-        if action != "save_rating_votes":
+        if action not in {"save_rating_votes", "delete_rating_votes"}:
             flash("Unknown sentence-vote action.")
             return redirect(
                 url_for(
@@ -6017,6 +6017,18 @@ def human_evaluation_sentence_rankings(eval_project_id):
             selected = human_eval_rating_editor_payload(conn, eval_project_id, rating_id)
             if not selected:
                 flash("Rating not found for this project.")
+                return redirect(
+                    url_for(
+                        "human_evaluation_sentence_rankings",
+                        eval_project_id=eval_project_id,
+                    )
+                )
+
+            if action == "delete_rating_votes":
+                conn.execute("DELETE FROM human_eval_rankings WHERE rating_id = ?", (rating_id,))
+                conn.execute("DELETE FROM human_eval_ratings WHERE id = ?", (rating_id,))
+                conn.commit()
+                flash("Vote removed completely.")
                 return redirect(
                     url_for(
                         "human_evaluation_sentence_rankings",

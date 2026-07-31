@@ -383,6 +383,13 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
             """
         ).fetchone()["rating_id"]
 
+    selected_sentence_votes_page = client.get(
+        f"/human-evaluation/{project['id']}/sentence-rankings?rating={rating_id_for_sentence_votes}"
+    )
+    assert selected_sentence_votes_page.status_code == 200
+    assert b"This editor changes one complete vote." in selected_sentence_votes_page.data
+    assert b"Remove Vote" in selected_sentence_votes_page.data
+
     edit_sentence_votes_response = client.post(
         f"/human-evaluation/{project['id']}/sentence-rankings",
         data={
@@ -494,6 +501,53 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
             """
         ).fetchone()["count"]
     assert remaining_my_ratings == 0
+
+    with litra_app.db() as conn:
+        link_id = conn.execute(
+            "SELECT id FROM human_eval_links WHERE token = ?",
+            ("eval-token",),
+        ).fetchone()["id"]
+        removable_rating_id = litra_app.insert_and_get_id(
+            conn,
+            """
+            INSERT INTO human_eval_ratings (link_id, item_id, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (link_id, item["id"], litra_app.now_iso()),
+        )
+        for rank_value, model_id in enumerate(model_ids, start=1):
+            conn.execute(
+                """
+                INSERT INTO human_eval_rankings
+                    (rating_id, model_id, rank_value, error_span, comment)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (removable_rating_id, model_id, rank_value, "{}", "remove-me"),
+            )
+        conn.commit()
+
+    remove_vote_response = client.post(
+        f"/human-evaluation/{project['id']}/sentence-rankings",
+        data={
+            "action": "delete_rating_votes",
+            "rating_id": str(removable_rating_id),
+        },
+        follow_redirects=True,
+    )
+    assert remove_vote_response.status_code == 200
+    assert b"Vote removed completely." in remove_vote_response.data
+
+    with litra_app.db() as conn:
+        removed_rating_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM human_eval_ratings WHERE id = ?",
+            (removable_rating_id,),
+        ).fetchone()["count"]
+        removed_vote_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM human_eval_rankings WHERE rating_id = ?",
+            (removable_rating_id,),
+        ).fetchone()["count"]
+    assert removed_rating_count == 0
+    assert removed_vote_count == 0
 
 
 def test_human_evaluation_project_allows_missing_reference(monkeypatch, tmp_path):

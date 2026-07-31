@@ -86,8 +86,8 @@
       </div>
 
       <form method="post" class="stack">
-        <input type="hidden" name="action" value="save_rating_votes">
         <input type="hidden" name="rating_id" value="{{ selected_rating.rating_id }}">
+        <p class="form-note">This editor changes one complete vote. Use remove to delete all assigned ranks for this sentence.</p>
 
         <div class="eval-vote-editor-grid">
           {% for vote in selected_rating.votes %}
@@ -121,7 +121,16 @@
         </div>
 
         <div class="editor-actions">
-          <button type="submit">Save Votes</button>
+          <button type="submit" name="action" value="save_rating_votes">Save Votes</button>
+          <button
+            type="submit"
+            class="secondary danger-text-button"
+            name="action"
+            value="delete_rating_votes"
+            onclick="return confirm('Remove this vote completely? This deletes all assigned ranks and comments for this sentence.');"
+          >
+            Remove Vote
+          </button>
         </div>
       </form>
     {% endif %}
