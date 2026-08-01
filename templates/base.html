@@ -16,6 +16,7 @@
       {% if session.get("user_id") %}
       <a href="{{ url_for('dashboard') }}">Translate</a>
       <a href="{{ url_for('human_evaluation_dashboard') }}">Human Evaluation</a>
+      <a href="{{ url_for('languages_management') }}">Languages</a>
       <a href="{{ url_for('import_formats') }}">Import Formats</a>
       <a href="{{ url_for('about') }}">About</a>
       <a href="{{ url_for('logout') }}">Logout</a>
@@ -26,6 +27,8 @@
       {% endif %}
     </nav>
   </header>
+
+  {% include "_breadcrumbs.html" %}
 
   <main class="{% block main_class %}page{% endblock %}">
     {% with messages = get_flashed_messages() %}
@@ -49,6 +52,7 @@
       </p>
     </div>
   </footer>
+  <script src="{{ url_for('static', filename='ui_enhancements.js') }}?v={{ STATIC_VERSION }}"></script>
 </body>
 
 </html>

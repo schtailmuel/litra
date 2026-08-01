@@ -10,7 +10,11 @@
   <body>
     <header class="topbar translator-topbar">
       <div class="translator-titlebar">
+        {% if project_url %}
+        <a class="brand" href="{{ project_url }}">{{ link.project_name }}</a>
+        {% else %}
         <span class="brand">{{ link.project_name }}</span>
+        {% endif %}
         <span>{{ link.source_language }} &rarr; {{ link.target_language }}</span>
       </div>
       <div class="translator-context" aria-live="polite">
@@ -141,6 +145,18 @@
             <button id="overwriteServer" type="button">Overwrite With Draft</button>
           </div>
         </div>
+
+        <dialog id="qaWarningModal" class="eval-comment-modal" aria-label="QA warnings">
+          <div class="eval-comment-modal-inner qa-warning-modal-inner">
+            <h2>QA Warnings</h2>
+            <p>The following checks found potential issues. You can continue anyway or close and adapt your translation.</p>
+            <ul id="qaWarningList" class="qa-warning-list"></ul>
+            <div class="editor-actions">
+              <button id="qaWarningCloseButton" type="button" class="secondary">Close and Adapt</button>
+              <button id="qaWarningContinueButton" type="button">Ignore and Continue</button>
+            </div>
+          </div>
+        </dialog>
       </section>
 
       <aside class="comment-side" aria-label="Translation comments">
@@ -162,6 +178,7 @@
     </main>
 
     <script src="{{ url_for('static', filename='markdown.js') }}?v={{ STATIC_VERSION }}"></script>
+    <script src="{{ url_for('static', filename='ui_enhancements.js') }}?v={{ STATIC_VERSION }}"></script>
     <script src="{{ url_for('static', filename='translate.js') }}?v={{ STATIC_VERSION }}"></script>
   </body>
 </html>

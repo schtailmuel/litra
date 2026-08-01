@@ -157,12 +157,27 @@
       {% if model_rows %}
         <div class="source-language-list">
           {% for model in model_rows %}
-            <div class="source-language-row">
-              <div class="link-summary">
-                <strong>{{ model.model_name }}</strong>
-                <small>Blindly shown to evaluators as randomized candidates</small>
+            {% if can_manage_access %}
+              <div class="source-language-row model-rename-row">
+                <form method="post" class="inline-form model-rename-form">
+                  <input type="hidden" name="action" value="rename_human_eval_model">
+                  <input type="hidden" name="model_id" value="{{ model.id }}">
+                  <label>
+                    Model name
+                    <input name="model_name" value="{{ model.model_name }}" maxlength="120" required>
+                  </label>
+                  <button type="submit" class="secondary">Rename</button>
+                </form>
+                <small class="muted">Blindly shown to evaluators as randomized candidates</small>
               </div>
-            </div>
+            {% else %}
+              <div class="source-language-row">
+                <div class="link-summary">
+                  <strong>{{ model.model_name }}</strong>
+                  <small>Blindly shown to evaluators as randomized candidates</small>
+                </div>
+              </div>
+            {% endif %}
           {% endfor %}
         </div>
       {% else %}
@@ -229,7 +244,7 @@
       </div>
       <div class="page-actions">
         <a class="button secondary" href="{{ url_for('human_evaluation_sentence_rankings', eval_project_id=project.id) }}">Sentence Votes</a>
-        <button type="button" class="secondary" data-action="export-ranking-latex">Export LaTeX</button>
+        <button type="button" class="secondary" data-action="show-ranking-latex">View LaTeX</button>
         <small id="evalAnalyticsUpdatedAt">updated: now</small>
       </div>
     </div>
@@ -287,7 +302,7 @@
         <h2>Pairwise Win-Rate Heatmap</h2>
         <p class="muted">Cell A→B shows how often A is ranked better than B.</p>
       </div>
-      <button type="button" class="secondary" data-action="export-pairwise-latex">Export LaTeX</button>
+      <button type="button" class="secondary" data-action="show-pairwise-latex">View LaTeX</button>
     </div>
     <div id="evalPairwiseHeatmap" class="eval-heatmap-wrap">
       {% if analytics_pairwise %}
@@ -344,6 +359,14 @@
       <p class="muted">Comments will appear after evaluations are submitted.</p>
     {% endif %}
   </section>
+
+  <dialog id="evalLatexModal" class="eval-comment-modal" aria-label="LaTeX preview">
+    <form method="dialog" class="eval-comment-modal-inner">
+      <h3 id="evalLatexTitle">LaTeX</h3>
+      <textarea id="evalLatexText" rows="14" readonly></textarea>
+      <button type="submit" class="secondary">Close</button>
+    </form>
+  </dialog>
 
   <script src="{{ url_for('static', filename='human_eval_project.js') }}?v={{ STATIC_VERSION }}"></script>
 {% endblock %}

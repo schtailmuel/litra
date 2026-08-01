@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block main_class %}page page-wide{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Languages Management</h1>
+      <p>Upload Hunspell dictionaries. Spellcheck runs from each project language page after assignment.</p>
+    </div>
+    <div class="page-actions">
+      <a class="button secondary" href="{{ url_for('dashboard') }}">Back to Translate</a>
+    </div>
+  </div>
+
+  <section class="split section-gap">
+    <div class="form-panel">
+      <h2>Upload Dictionary</h2>
+      <form method="post" enctype="multipart/form-data" class="stack">
+        <input type="hidden" name="action" value="upload_dictionary">
+        <label>
+          Language name
+          <input name="language_name" placeholder="e.g. Ladin" required>
+        </label>
+        <label>
+          Hunspell dictionary file (.dic)
+          <input name="dictionary_dic" type="file" accept=".dic,text/plain" required>
+        </label>
+        <label>
+          Hunspell affix file (.aff, optional)
+          <input name="dictionary_aff" type="file" accept=".aff,text/plain">
+        </label>
+        <p class="form-note">Current spellcheck uses base words from <code>.dic</code>. Uploaded <code>.aff</code> is stored for future improvements.</p>
+        <button type="submit">Upload Dictionary</button>
+      </form>
+    </div>
+
+    <div class="form-panel">
+      <h2>Installed Dictionaries</h2>
+      {% if dictionaries %}
+        <div class="source-language-list">
+          {% for dictionary in dictionaries %}
+            <div class="source-language-row">
+              <div class="link-summary">
+                <strong>{{ dictionary.language_name }}</strong>
+                <small>{{ dictionary.word_count }} base words · updated {{ dictionary.updated_at }}</small>
+              </div>
+              <form method="post" onsubmit="return confirm('Delete dictionary for {{ dictionary.language_name }}?');">
+                <input type="hidden" name="action" value="delete_dictionary">
+                <input type="hidden" name="language_key" value="{{ dictionary.language_key }}">
+                <button type="submit" class="secondary danger-text-button">Delete</button>
+              </form>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">No dictionaries uploaded yet.</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

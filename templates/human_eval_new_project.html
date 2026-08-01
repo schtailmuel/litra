@@ -36,10 +36,26 @@
         <input name="reference_txt" type="file" accept=".txt,text/plain">
       </label>
 
-      <label>
-        Model TXT files (multiple, one file per model)
-        <input name="model_files" type="file" accept=".txt,text/plain" multiple required>
-      </label>
+      <div class="model-file-picker" data-model-file-picker>
+        <label for="modelFileChooser">
+          Model TXT files (one file per model)
+        </label>
+        <div class="model-file-picker-controls">
+          <input id="modelFileChooser" type="file" accept=".txt,text/plain">
+          <button id="addModelFileButton" type="button" class="secondary">Add File</button>
+        </div>
+        <input id="modelFilesInput" name="model_files" type="file" accept=".txt,text/plain" multiple class="hidden" tabindex="-1" aria-hidden="true">
+        <ul id="modelFileList" class="model-file-list" aria-live="polite">
+          <li class="muted">No model files selected yet.</li>
+        </ul>
+      </div>
+
+      <noscript>
+        <label>
+          Model TXT files (fallback multi-select)
+          <input name="model_files" type="file" accept=".txt,text/plain" multiple required>
+        </label>
+      </noscript>
 
       <p class="form-note">
         Source and model files must have the same number of lines. If provided, reference lines must also match source lines. Model names are derived from filenames.
@@ -48,4 +64,101 @@
       <button type="submit">Create Project</button>
     </form>
   </section>
+
+  <script>
+    (function () {
+      const form = document.querySelector("form[enctype='multipart/form-data']");
+      const chooser = document.getElementById("modelFileChooser");
+      const addButton = document.getElementById("addModelFileButton");
+      const hiddenFilesInput = document.getElementById("modelFilesInput");
+      const list = document.getElementById("modelFileList");
+      if (!form || !chooser || !addButton || !hiddenFilesInput || !list || typeof DataTransfer === "undefined") {
+        return;
+      }
+
+      const selectedFiles = [];
+
+      function fileKey(file) {
+        return [file.name, file.size, file.lastModified].join("::");
+      }
+
+      function syncHiddenInput() {
+        const transfer = new DataTransfer();
+        for (const file of selectedFiles) {
+          transfer.items.add(file);
+        }
+        hiddenFilesInput.files = transfer.files;
+      }
+
+      function renderList() {
+        if (!selectedFiles.length) {
+          list.innerHTML = '<li class="muted">No model files selected yet.</li>';
+          return;
+        }
+
+        list.innerHTML = "";
+        selectedFiles.forEach((file, index) => {
+          const item = document.createElement("li");
+          item.className = "model-file-row";
+
+          const name = document.createElement("span");
+          name.textContent = file.name;
+          name.title = file.name;
+
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "secondary";
+          removeButton.textContent = "Remove";
+          removeButton.dataset.removeIndex = String(index);
+
+          item.appendChild(name);
+          item.appendChild(removeButton);
+          list.appendChild(item);
+        });
+      }
+
+      function addSelectedFile() {
+        const file = chooser.files && chooser.files[0];
+        if (!file) {
+          return;
+        }
+        const key = fileKey(file);
+        if (!selectedFiles.some((existing) => fileKey(existing) === key)) {
+          selectedFiles.push(file);
+          syncHiddenInput();
+          renderList();
+        }
+        chooser.value = "";
+      }
+
+      addButton.addEventListener("click", () => chooser.click());
+      chooser.addEventListener("change", addSelectedFile);
+
+      list.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        const indexText = target.dataset.removeIndex;
+        if (indexText === undefined) {
+          return;
+        }
+        const index = Number.parseInt(indexText, 10);
+        if (Number.isNaN(index) || index < 0 || index >= selectedFiles.length) {
+          return;
+        }
+        selectedFiles.splice(index, 1);
+        syncHiddenInput();
+        renderList();
+      });
+
+      form.addEventListener("submit", (event) => {
+        if (selectedFiles.length < 2) {
+          event.preventDefault();
+          window.alert("Please add at least two model TXT files.");
+          chooser.focus();
+        }
+      });
+    })();
+  </script>
 {% endblock %}

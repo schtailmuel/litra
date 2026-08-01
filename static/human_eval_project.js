@@ -6,6 +6,9 @@
 
   const analyticsUrl = shell.dataset.evalAnalyticsApi;
   const updatedAtNode = document.querySelector("#evalAnalyticsUpdatedAt");
+  const latexModal = document.querySelector("#evalLatexModal");
+  const latexTitleNode = document.querySelector("#evalLatexTitle");
+  const latexTextNode = document.querySelector("#evalLatexText");
   let latestPairwiseRows = [];
   let latestAnalyticsRows = [];
   let latestRankLevels = [];
@@ -518,18 +521,20 @@
     }, 1000);
   }
 
-  function downloadTextFile(filename, text) {
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => {
-      URL.revokeObjectURL(objectUrl);
-    }, 1000);
+  function showLatexModal(title, latexText) {
+    if (!latexModal || !latexTextNode || !latexTitleNode) {
+      return false;
+    }
+    latexTitleNode.textContent = title;
+    latexTextNode.value = latexText;
+    if (typeof latexModal.showModal === "function") {
+      latexModal.showModal();
+    } else {
+      latexModal.setAttribute("open", "open");
+    }
+    latexTextNode.focus();
+    latexTextNode.select();
+    return true;
   }
 
   function updateSentenceRankings(sentenceRows, rankLevels) {
@@ -638,7 +643,7 @@
   }
 
   document.addEventListener("click", async (event) => {
-    const rankingExportButton = event.target.closest('[data-action="export-ranking-latex"]');
+    const rankingExportButton = event.target.closest('[data-action="show-ranking-latex"]');
     if (rankingExportButton) {
       const rankingRowsForExport = (Array.isArray(latestAnalyticsRows) && latestAnalyticsRows.length)
         ? latestAnalyticsRows
@@ -652,17 +657,14 @@
         return;
       }
 
-      downloadTextFile("model-ranking.tex", `${latex}\n`);
-      try {
-        await navigator.clipboard.writeText(latex);
-      } catch (_error) {
-        // Ignore clipboard failures; download already succeeded.
+      if (!showLatexModal("Model Ranking LaTeX", latex)) {
+        flashExportButton(rankingExportButton, "Unavailable");
+        return;
       }
-      flashExportButton(rankingExportButton, "Exported");
       return;
     }
 
-    const exportButton = event.target.closest('[data-action="export-pairwise-latex"]');
+    const exportButton = event.target.closest('[data-action="show-pairwise-latex"]');
     if (exportButton) {
       const rowsForExport = (Array.isArray(latestPairwiseRows) && latestPairwiseRows.length)
         ? latestPairwiseRows
@@ -673,13 +675,10 @@
         return;
       }
 
-      downloadTextFile("pairwise-heatmap.tex", `${latex}\n`);
-      try {
-        await navigator.clipboard.writeText(latex);
-      } catch (_error) {
-        // Ignore clipboard failures; download already succeeded.
+      if (!showLatexModal("Pairwise Heatmap LaTeX", latex)) {
+        flashExportButton(exportButton, "Unavailable");
+        return;
       }
-      flashExportButton(exportButton, "Exported");
       return;
     }
 

@@ -66,6 +66,10 @@ const els = {
   draftText: document.querySelector("#draftText"),
   useServer: document.querySelector("#useServer"),
   overwriteServer: document.querySelector("#overwriteServer"),
+  qaWarningModal: document.querySelector("#qaWarningModal"),
+  qaWarningList: document.querySelector("#qaWarningList"),
+  qaWarningCloseButton: document.querySelector("#qaWarningCloseButton"),
+  qaWarningContinueButton: document.querySelector("#qaWarningContinueButton"),
   focusModeToggleButton: document.querySelector("#focusModeToggleButton"),
   commentDrawerToggleButton: document.querySelector("#commentDrawerToggleButton"),
 };
@@ -82,6 +86,7 @@ const state = {
   draftTimer: null,
   draftSnapshot: "",
   legacyComment: "",
+  pendingQaSave: null,
   activeSourceLanguage: "",
   focusMode: false,
   mobileCommentsOpen: !mobileCommentsMediaQuery.matches,
@@ -650,6 +655,7 @@ function clearEditor(title, message) {
   state.currentSegment = null;
   state.dirty = false;
   state.conflict = null;
+  state.pendingQaSave = null;
   state.draftSnapshot = "";
   state.legacyComment = "";
   state.activeSourceLanguage = "";
@@ -669,6 +675,7 @@ function clearEditor(title, message) {
   els.sourceFlagPanel.classList.add("hidden");
   updateSourceFlagControls(null);
   els.conflictPanel.classList.add("hidden");
+  closeQaWarningModal();
   setEditorEnabled(false);
 }
 
@@ -677,6 +684,7 @@ function renderSegment(segment) {
   state.currentSegment = segment;
   state.dirty = false;
   state.conflict = null;
+  state.pendingQaSave = null;
   els.segmentTitle.textContent = segment.identifier || `Segment ${segment.ordinal}`;
   activeSourceVariant(segment);
   renderSourceArea(segment);
@@ -693,6 +701,7 @@ function renderSegment(segment) {
   updateSourceFlagControls(segment);
   state.draftSnapshot = translationSnapshot();
   els.conflictPanel.classList.add("hidden");
+  closeQaWarningModal();
   setEditorEnabled(true);
   setSaveState("Claimed");
 }
@@ -746,7 +755,159 @@ async function getNextSegment() {
   setSaveState("Done", "saved");
 }
 
-async function saveSegment(loadNext = false, force = false) {
+const qaWarningHelp = {
+  empty_translation: {
+    title: "Empty translation",
+    reason: "No translation text was detected.",
+    guidance: "Add translated content before submitting.",
+  },
+  row_count: {
+    title: "Row count mismatch",
+    reason: "Source and translation have different line/row counts.",
+    guidance: "Check that each source row is represented in the translation.",
+  },
+  missing_numbers: {
+    title: "Missing numbers",
+    reason: "Some numeric values from source are missing in translation.",
+    guidance: "Verify dates, quantities, IDs, and other numbers are preserved.",
+  },
+  changed_punctuation: {
+    title: "Terminal punctuation changed",
+    reason: "Sentence-ending punctuation differs from the source.",
+    guidance: "Confirm punctuation changes are intentional.",
+  },
+  length_ratio: {
+    title: "Unusual length ratio",
+    reason: "Translation length is much shorter/longer than source.",
+    guidance: "Review for omissions or accidental repetitions.",
+  },
+  markdown_links: {
+    title: "Markdown links differ",
+    reason: "Number of markdown links changed.",
+    guidance: "Preserve all links and their destinations.",
+  },
+  markdown_headings: {
+    title: "Markdown headings differ",
+    reason: "Heading structure changed.",
+    guidance: "Keep heading levels/count aligned with source format.",
+  },
+  special_symbols: {
+    title: "Special symbols differ",
+    reason: "Counts of symbols (e.g. bullets, punctuation, operators) changed.",
+    guidance: "Verify special characters were not dropped or altered accidentally.",
+  },
+  uppercase_text: {
+    title: "Uppercase style mismatch",
+    reason: "Source appears uppercase while translation does not.",
+    guidance: "Match casing style when required by the content.",
+  },
+  untranslated_source_words: {
+    title: "Possible untranslated words",
+    reason: "Multiple source-language words appear unchanged in translation.",
+    guidance: "Review copied source words and translate where needed.",
+  },
+};
+
+function qaWarningInfo(warning) {
+  const code = String((warning && warning.code) || "").trim();
+  const fallbackTitle = code ? code.replace(/_/g, " ") : "Potential issue";
+  const label = String((warning && (warning.label || warning.message)) || "").trim();
+  const base = qaWarningHelp[code] || {
+    title: fallbackTitle,
+    reason: "Potential translation quality issue detected.",
+    guidance: "Review this item before saving.",
+  };
+  return {
+    code,
+    title: base.title,
+    reason: base.reason,
+    guidance: base.guidance,
+    details: label,
+  };
+}
+
+function closeQaWarningModal() {
+  if (!els.qaWarningModal) {
+    return;
+  }
+  if (typeof els.qaWarningModal.close === "function") {
+    els.qaWarningModal.close();
+    return;
+  }
+  els.qaWarningModal.removeAttribute("open");
+}
+
+function showQaWarningModal(warnings, pendingSaveOptions) {
+  state.pendingQaSave = pendingSaveOptions;
+  if (!els.qaWarningModal || !els.qaWarningList) {
+    return false;
+  }
+
+  els.qaWarningList.innerHTML = "";
+  for (const warning of warnings || []) {
+    const info = qaWarningInfo(warning);
+    const item = document.createElement("li");
+    item.className = "qa-warning-item";
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "qa-warning-title";
+
+    const title = document.createElement("strong");
+    title.textContent = info.title;
+    titleRow.appendChild(title);
+
+    if (info.code) {
+      const codeBadge = document.createElement("code");
+      codeBadge.textContent = info.code;
+      titleRow.appendChild(codeBadge);
+    }
+
+    const reason = document.createElement("p");
+    reason.className = "qa-warning-reason";
+    reason.textContent = info.reason;
+
+    const details = document.createElement("small");
+    details.className = "qa-warning-details";
+    details.textContent = info.details || "Please review this warning.";
+
+    const guidance = document.createElement("small");
+    guidance.className = "qa-warning-guidance";
+    guidance.textContent = `What to check: ${info.guidance}`;
+
+    item.append(titleRow, reason, details, guidance);
+    els.qaWarningList.appendChild(item);
+  }
+
+  if (typeof els.qaWarningModal.showModal === "function") {
+    els.qaWarningModal.showModal();
+  } else {
+    els.qaWarningModal.setAttribute("open", "open");
+  }
+  return true;
+}
+
+async function runQaChecks(segment, draft) {
+  const response = await fetch(apiUrl(`/segments/${segment.id}/qa-check`), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      target_text: draft.target_text,
+      target_instructions: draft.target_instructions,
+    }),
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const data = await response.json().catch(() => ({}));
+  if (data.status !== "ok") {
+    return null;
+  }
+  return Array.isArray(data.qa_warnings) ? data.qa_warnings : [];
+}
+
+async function saveSegment(loadNext = false, force = false, skipQaCheck = false) {
   const segment = state.currentSegment;
   if (!segment) {
     return;
@@ -754,6 +915,19 @@ async function saveSegment(loadNext = false, force = false) {
 
   const draft = collectTranslationPayload();
   const comment = state.legacyComment;
+  if (!skipQaCheck) {
+    setSaveState("Running QA");
+    const qaWarnings = await runQaChecks(segment, draft);
+    if (qaWarnings && qaWarnings.length) {
+      const shown = showQaWarningModal(qaWarnings, { loadNext, force });
+      setSaveState("QA warnings", "conflict");
+      if (!shown) {
+        setSaveState("QA warnings detected", "conflict");
+      }
+      return;
+    }
+  }
+
   setSaveState("Saving");
   clearTimeout(state.draftTimer);
   const response = await fetch(apiUrl(`/segments/${segment.id}`), {
@@ -1008,6 +1182,22 @@ function markDirty() {
   setSaveState("Draft unsaved");
   scheduleDraftSave();
 }
+
+els.qaWarningCloseButton?.addEventListener("click", () => {
+  state.pendingQaSave = null;
+  closeQaWarningModal();
+  setSaveState("QA warnings", "conflict");
+});
+
+els.qaWarningContinueButton?.addEventListener("click", () => {
+  const pending = state.pendingQaSave;
+  state.pendingQaSave = null;
+  closeQaWarningModal();
+  if (!pending) {
+    return;
+  }
+  saveSegment(Boolean(pending.loadNext), Boolean(pending.force), true);
+});
 
 els.targetText.addEventListener("input", markDirty);
 els.targetInstructions.addEventListener("input", markDirty);

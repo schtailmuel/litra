@@ -32,6 +32,18 @@
       <div><strong>{{ language_stats.needs_revision_segments }}</strong><span>needs revision</span></div>
       <div><strong>{{ language_stats.approved_segments }}</strong><span>approved</span></div>
       <div><strong>{{ language_stats.warning_segments }}</strong><span>QA warnings</span></div>
+      <div><strong>{{ language_word_count }}</strong><span>words</span></div>
+      <div><strong>{{ language_character_count }}</strong><span>characters</span></div>
+      <div>
+        <strong>
+          {% if assigned_spellcheck and assigned_spellcheck.last_run_at %}
+            {{ assigned_spellcheck.last_known_percentage }}%
+          {% else %}
+            --
+          {% endif %}
+        </strong>
+        <span>spellcheck known</span>
+      </div>
     </div>
   </section>
 
@@ -110,6 +122,64 @@
       </div>
     {% else %}
       <p class="muted">No translators exist for this language yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="form-panel section-gap spellcheck-section">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Spellcheck</h2>
+        <p class="muted">Assign a Hunspell dictionary and run spellcheck on this language's translated texts.</p>
+      </div>
+      <div class="page-actions spellcheck-actions">
+        {% if assigned_spellcheck and assigned_spellcheck.language_name %}
+          <small class="muted">Assigned: {{ assigned_spellcheck.language_name }} ({{ assigned_spellcheck.word_count or 0 }} words)</small>
+          <a class="button secondary compact-button" href="{{ url_for('language_spellcheck_report_pdf', project_id=project.id, target_language=target_language) }}">Download PDF</a>
+        {% else %}
+          <small class="muted">No dictionary assigned</small>
+        {% endif %}
+      </div>
+    </div>
+
+    <form method="post" class="split-fields spellcheck-config-form">
+      <input type="hidden" name="action" value="assign_spellcheck_dictionary">
+      <label>
+        Hunspell dictionary
+        <select name="language_key">
+          <option value="">No dictionary</option>
+          {% for dictionary in dictionaries %}
+            <option value="{{ dictionary.language_key }}" {% if assigned_spellcheck and assigned_spellcheck.language_key == dictionary.language_key %}selected{% endif %}>
+              {{ dictionary.language_name }} ({{ dictionary.word_count }} words)
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="secondary compact-button">Save Assignment</button>
+    </form>
+
+    <form method="post" class="section-gap spellcheck-run-form">
+      <input type="hidden" name="action" value="run_language_spellcheck">
+      <button type="submit" class="compact-button">Run Spellcheck</button>
+    </form>
+
+    {% if spellcheck_report %}
+      <div class="section-gap">
+        <div class="overview-grid compact-overview">
+          <div><strong>{{ spellcheck_report.known_percentage }}%</strong><span>known words</span></div>
+          <div><strong>{{ spellcheck_report.checked_tokens }}</strong><span>tokens checked</span></div>
+          <div><strong>{{ spellcheck_report.known_tokens }}</strong><span>known tokens</span></div>
+          <div><strong>{{ spellcheck_report.misspelled_tokens }}</strong><span>unknown tokens</span></div>
+          <div><strong>{{ spellcheck_report.unique_misspellings }}</strong><span>unique unknown words</span></div>
+          <div><strong>{{ spellcheck_report.corpus_row_count }}</strong><span>texts analyzed</span></div>
+          <div><strong>{{ spellcheck_report.dictionary_word_count }}</strong><span>dictionary words</span></div>
+          <div><strong>{{ spellcheck_report.dictionary_name }}</strong><span>dictionary</span></div>
+        </div>
+        {% if spellcheck_report.unique_misspellings > 0 %}
+          <p class="muted">Detailed unknown words and highlighted text context are available in the PDF report.</p>
+        {% else %}
+          <p class="muted">No misspellings detected for this language in this project.</p>
+        {% endif %}
+      </div>
     {% endif %}
   </section>
 
