@@ -3183,6 +3183,30 @@ def parse_hunspell_flags(flags_text, flag_mode="single"):
     return list(raw)
 
 
+def split_hunspell_dic_token(raw_token):
+    token = str(raw_token or "")
+    escaped = False
+    split_at = -1
+    for index, char in enumerate(token):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == "/":
+            split_at = index
+            break
+    if split_at < 0:
+        base = token
+        flags = ""
+    else:
+        base = token[:split_at]
+        flags = token[split_at + 1:]
+    base = base.replace("\\/", "/")
+    return base, flags
+
+
 def parse_hunspell_affix_rules(aff_text):
     prefix_rules = defaultdict(list)
     suffix_rules = defaultdict(list)
@@ -3291,10 +3315,7 @@ def parse_hunspell_dictionary_words(dic_text, aff_text=""):
         if not raw_token:
             continue
 
-        base, flags = raw_token, ""
-        if "/" in raw_token:
-            base, flags = raw_token.split("/", 1)
-            flags = flags.split(",", 1)[0]
+        base, flags = split_hunspell_dic_token(raw_token)
         normalized_base = normalize_spell_word(base)
         if not normalized_base:
             continue
