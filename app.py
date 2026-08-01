@@ -3481,6 +3481,59 @@ def project_language_spellcheck_report(conn, project_id, target_language):
         ).fetchall()
     ]
 
+    target_word_count = 0
+    target_char_count = 0
+    for row in corpus_rows:
+        text_value = str(row.get("text_value") or "")
+        target_char_count += len(text_value)
+        target_word_count += len(SPELLCHECK_TOKEN_PATTERN.findall(text_value))
+
+    source_stats = {}
+
+    def add_source_stats(language, text):
+        language_name = str(language or "").strip() or "Unknown"
+        language_key = language_name.lower()
+        text_value = str(text or "")
+        entry = source_stats.setdefault(
+            language_key,
+            {
+                "source_language": language_name,
+                "text_count": 0,
+                "word_count": 0,
+                "char_count": 0,
+            },
+        )
+        entry["text_count"] += 1
+        entry["word_count"] += len(SPELLCHECK_TOKEN_PATTERN.findall(text_value))
+        entry["char_count"] += len(text_value)
+
+    for row in conn.execute(
+        """
+        SELECT source_language, source_text
+        FROM segments
+        WHERE project_id = ?
+        """,
+        (project_id,),
+    ).fetchall():
+        add_source_stats(row["source_language"], row["source_text"])
+
+    for row in conn.execute(
+        """
+        SELECT sv.source_language, sv.source_text
+        FROM source_variants sv
+        JOIN segments s ON s.id = sv.segment_id
+        WHERE s.project_id = ?
+          AND lower(sv.source_language) != lower(s.source_language)
+        """,
+        (project_id,),
+    ).fetchall():
+        add_source_stats(row["source_language"], row["source_text"])
+
+    source_language_stats = sorted(
+        source_stats.values(),
+        key=lambda item: str(item.get("source_language") or "").lower(),
+    )
+
     dictionary_words = parse_hunspell_dictionary_words(
         assigned["dic_content"],
         assigned["aff_content"],
@@ -3525,6 +3578,10 @@ def project_language_spellcheck_report(conn, project_id, target_language):
             else 100.0
         ),
         **summary,
+        "target_text_count": len(corpus_rows),
+        "target_word_count": target_word_count,
+        "target_char_count": target_char_count,
+        "source_language_stats": source_language_stats,
         "text_rows": text_rows,
     }
 
@@ -3549,6 +3606,60 @@ def pdf_text_command(x, y, text, font="F1", size=10, color=(0, 0, 0)):
 def pdf_fill_rect_command(x, y, width, height, color=(1, 0.9, 0.9)):
     red, green, blue = color
     return f"{red:.3f} {green:.3f} {blue:.3f} rg {x:.2f} {y:.2f} {width:.2f} {height:.2f} re f"
+
+
+def pdf_estimate_text_width(text, font="F1", size=10):
+    value = str(text or "")
+    if not value:
+        return 0.0
+    if font == "F3":
+        return len(value) * size * 0.6
+
+    narrow_chars = set(" .,;:!|iIl'`\"[](){}")
+    wide_chars = set("MW@#%&")
+    total = 0.0
+    for char in value:
+        if char == " ":
+            total += 0.28
+        elif char in narrow_chars:
+            total += 0.3
+        elif char in wide_chars:
+            total += 0.86
+        elif char.isdigit():
+            total += 0.56
+        elif char.isupper():
+            total += 0.62
+        else:
+            total += 0.52
+    return total * size
+
+
+PDF_INLINE_MARKDOWN_PATTERN = re.compile(
+    r"(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\(https?://[^)\s]+\))"
+)
+
+
+def markdown_inline_text(value):
+    text = str(value or "")
+    output = []
+    position = 0
+    for match in PDF_INLINE_MARKDOWN_PATTERN.finditer(text):
+        if match.start() > position:
+            output.append(text[position:match.start()])
+        token = match.group(0)
+        if token.startswith("**"):
+            output.append(token[2:-2])
+        elif token.startswith("*"):
+            output.append(token[1:-1])
+        elif token.startswith("`"):
+            output.append(token[1:-1])
+        else:
+            link_match = re.match(r"\[([^\]]+)\]\([^)]+\)", token)
+            output.append(link_match.group(1) if link_match else token)
+        position = match.end()
+    if position < len(text):
+        output.append(text[position:])
+    return "".join(output)
 
 
 def build_pdf_document(page_streams):
@@ -3608,50 +3719,67 @@ def build_pdf_document(page_streams):
     return bytes(body)
 
 
-def wrap_highlighted_text_lines(highlighted_text, max_chars=90):
+def wrap_highlighted_text_lines(highlighted_text, max_width=515, font="F1", size=10):
     wrapped = []
     marker_pattern = re.compile(r"\[\[(.*?)\]\]")
     for raw_line in str(highlighted_text or "").splitlines() or [""]:
+        style = "body"
+        content = raw_line
+        stripped = str(raw_line or "").strip()
+        heading = re.match(r"^(#{1,3})\s+(.+)$", stripped)
+        bullet = re.match(r"^[-*]\s+(.+)$", stripped)
+        quote = re.match(r"^>\s?(.+)$", stripped)
+        if heading:
+            style = "heading"
+            content = heading.group(2)
+        elif bullet:
+            style = "bullet"
+            content = "• " + bullet.group(1)
+        elif quote:
+            style = "quote"
+            content = "> " + quote.group(1)
+
         spans = []
         last_end = 0
-        for match in marker_pattern.finditer(raw_line):
+        for match in marker_pattern.finditer(content):
             start, end = match.span()
             if start > last_end:
-                spans.append((raw_line[last_end:start], False))
+                spans.append((content[last_end:start], False))
             spans.append((match.group(1), True))
             last_end = end
-        if last_end < len(raw_line):
-            spans.append((raw_line[last_end:], False))
+        if last_end < len(content):
+            spans.append((content[last_end:], False))
         if not spans:
-            spans.append((raw_line, False))
+            spans.append((content, False))
 
         segments = []
         for text_value, highlighted in spans:
             if text_value == "":
                 continue
-            for piece in re.findall(r"\S+|\s+", text_value):
+            normalized = markdown_inline_text(text_value)
+            for piece in re.findall(r"\S+|\s+", normalized):
                 if piece:
                     segments.append((piece, highlighted and not piece.isspace()))
 
         if not segments:
-            wrapped.append([])
+            wrapped.append({"tokens": [], "style": style})
             continue
 
         current_line = []
-        current_len = 0
+        current_width = 0.0
         for text_piece, highlighted in segments:
             text_piece = text_piece.replace("[[", "").replace("]]", "")
-            token_len = len(text_piece)
-            if current_line and current_len + token_len > max_chars and not text_piece.isspace():
-                wrapped.append(current_line)
+            token_width = pdf_estimate_text_width(text_piece, font=font, size=size)
+            if current_line and current_width + token_width > max_width and not text_piece.isspace():
+                wrapped.append({"tokens": current_line, "style": style})
                 current_line = []
-                current_len = 0
+                current_width = 0.0
             if not current_line and text_piece.isspace():
                 continue
             current_line.append((text_piece, highlighted))
-            current_len += token_len
+            current_width += token_width
         if current_line:
-            wrapped.append(current_line)
+            wrapped.append({"tokens": current_line, "style": style})
     return wrapped
 
 
@@ -3659,9 +3787,131 @@ def build_spellcheck_report_pdf(report, project_name, target_language):
     margin = 40
     page_height = 842
     line_height = 14
-    char_width = 5.4
-    max_line_chars = 90
+    text_font = "F1"
+    text_size = 10.5
+    max_line_width = 510
     page_streams = []
+    source_language_stats = list(report.get("source_language_stats") or [])
+    table_stats = [
+        {
+            "role": "Source",
+            "language": row.get("source_language", ""),
+            "text_count": int(row.get("text_count", 0) or 0),
+            "word_count": int(row.get("word_count", 0) or 0),
+            "char_count": int(row.get("char_count", 0) or 0),
+        }
+        for row in source_language_stats
+    ]
+    table_stats.append(
+        {
+            "role": "Target",
+            "language": str(target_language or ""),
+            "text_count": int(report.get("target_text_count", 0) or 0),
+            "word_count": int(report.get("target_word_count", 0) or 0),
+            "char_count": int(report.get("target_char_count", 0) or 0),
+        }
+    )
+
+    if table_stats:
+        rows_per_page = 34
+        for page_index in range(0, len(table_stats), rows_per_page):
+            table_rows = table_stats[page_index:page_index + rows_per_page]
+            commands = []
+            y = page_height - 52
+
+            commands.append(
+                pdf_text_command(
+                    margin,
+                    y,
+                    f"Spellcheck Report · {project_name} · {target_language}",
+                    font="F2",
+                    size=13,
+                )
+            )
+            y -= 20
+            commands.append(
+                pdf_text_command(
+                    margin,
+                    y,
+                    "Corpus statistics by language",
+                    font="F1",
+                    size=10,
+                    color=(0.2, 0.2, 0.2),
+                )
+            )
+            y -= 18
+
+            commands.append(pdf_fill_rect_command(margin, y - 4, 74, 16, color=(0.95, 0.95, 0.95)))
+            commands.append(pdf_fill_rect_command(margin + 74, y - 4, 166, 16, color=(0.95, 0.95, 0.95)))
+            commands.append(pdf_fill_rect_command(margin + 240, y - 4, 60, 16, color=(0.95, 0.95, 0.95)))
+            commands.append(pdf_fill_rect_command(margin + 300, y - 4, 85, 16, color=(0.95, 0.95, 0.95)))
+            commands.append(pdf_fill_rect_command(margin + 385, y - 4, 95, 16, color=(0.95, 0.95, 0.95)))
+            commands.append(pdf_text_command(margin + 6, y, "Role", font="F2", size=10))
+            commands.append(pdf_text_command(margin + 80, y, "Language", font="F2", size=10))
+            commands.append(pdf_text_command(margin + 246, y, "Texts", font="F2", size=10))
+            commands.append(pdf_text_command(margin + 306, y, "Words", font="F2", size=10))
+            commands.append(pdf_text_command(margin + 391, y, "Characters", font="F2", size=10))
+            y -= 18
+
+            for row in table_rows:
+                commands.append(
+                    pdf_text_command(
+                        margin + 6,
+                        y,
+                        str(row.get("role", "")),
+                        font="F1",
+                        size=10,
+                    )
+                )
+                commands.append(
+                    pdf_text_command(
+                        margin + 80,
+                        y,
+                        str(row.get("language", "")),
+                        font="F1",
+                        size=10,
+                    )
+                )
+                commands.append(
+                    pdf_text_command(
+                        margin + 246,
+                        y,
+                        f"{int(row.get('text_count', 0))}",
+                        font="F1",
+                        size=10,
+                    )
+                )
+                commands.append(
+                    pdf_text_command(
+                        margin + 306,
+                        y,
+                        f"{int(row.get('word_count', 0))}",
+                        font="F1",
+                        size=10,
+                    )
+                )
+                commands.append(
+                    pdf_text_command(
+                        margin + 391,
+                        y,
+                        f"{int(row.get('char_count', 0))}",
+                        font="F1",
+                        size=10,
+                    )
+                )
+                y -= 14
+
+            commands.append(
+                pdf_text_command(
+                    margin,
+                    24,
+                    f"Source stats page {page_index // rows_per_page + 1}",
+                    font="F1",
+                    size=9,
+                    color=(0.35, 0.35, 0.35),
+                )
+            )
+            page_streams.append("\n".join(commands))
 
     unknown_rows = list(report.get("rows") or [])
     if unknown_rows:
@@ -3689,6 +3939,7 @@ def build_spellcheck_report_pdf(report, project_name, target_language):
                         f"Dictionary: {report.get('dictionary_name', '')}"
                         f" · Known words: {report.get('known_tokens', 0)} / {report.get('checked_tokens', 0)}"
                         f" ({report.get('known_percentage', 0)}%)"
+                        f" · Unique unknown: {report.get('unique_misspellings', 0)}"
                     ),
                     font="F1",
                     size=10,
@@ -3751,7 +4002,9 @@ def build_spellcheck_report_pdf(report, project_name, target_language):
     for text_row in report.get("text_rows") or []:
         wrapped_lines = wrap_highlighted_text_lines(
             text_row.get("highlighted_text", ""),
-            max_chars=max_line_chars,
+            max_width=max_line_width,
+            font=text_font,
+            size=text_size,
         )
         pointer = 0
         part = 1
@@ -3776,16 +4029,23 @@ def build_spellcheck_report_pdf(report, project_name, target_language):
 
             min_y = 36
             while pointer < len(wrapped_lines) and y > min_y:
-                line_tokens = wrapped_lines[pointer]
+                wrapped_line = wrapped_lines[pointer]
                 pointer += 1
+                line_tokens = wrapped_line.get("tokens", [])
+                line_style = wrapped_line.get("style", "body")
                 if not line_tokens:
                     y -= line_height
                     continue
                 x = margin
+                current_font = text_font
+                current_size = text_size
+                if line_style == "heading":
+                    current_font = "F2"
+                    current_size = 11.0
                 for token_text, highlighted in line_tokens:
                     if token_text == "":
                         continue
-                    token_width = len(token_text) * char_width
+                    token_width = pdf_estimate_text_width(token_text, font=current_font, size=current_size)
                     if highlighted and token_text.strip():
                         commands.append(
                             pdf_fill_rect_command(
@@ -3801,8 +4061,8 @@ def build_spellcheck_report_pdf(report, project_name, target_language):
                             x,
                             y,
                             token_text,
-                            font="F3",
-                            size=10,
+                            font=current_font,
+                            size=current_size,
                         )
                     )
                     x += token_width
@@ -5121,30 +5381,57 @@ def source_variants_for_segment(conn, segment):
 
 
 def source_language_rows(conn, project_id):
-    rows = conn.execute(
+    stats = {}
+
+    def add(language, text, is_default=False):
+        language_name = str(language or "").strip() or "Unknown"
+        language_key = language_name.lower()
+        text_value = str(text or "")
+        entry = stats.setdefault(
+            language_key,
+            {
+                "source_language": language_name,
+                "segment_count": 0,
+                "word_count": 0,
+                "char_count": 0,
+                "is_default": False,
+            },
+        )
+        entry["segment_count"] += 1
+        entry["word_count"] += len(SPELLCHECK_TOKEN_PATTERN.findall(text_value))
+        entry["char_count"] += len(text_value)
+        if is_default:
+            entry["is_default"] = True
+
+    for row in conn.execute(
         """
-        SELECT *
-        FROM (
-            SELECT source_language,
-                   COUNT(*) AS segment_count,
-                   1 AS is_default
-            FROM segments
-            WHERE project_id = ?
-            GROUP BY source_language
-            UNION ALL
-            SELECT sv.source_language,
-                   COUNT(*) AS segment_count,
-                   0 AS is_default
-            FROM source_variants sv
-            JOIN segments s ON s.id = sv.segment_id
-            WHERE s.project_id = ?
-            GROUP BY sv.source_language
-        ) source_layers
-        ORDER BY is_default DESC, lower(source_language), source_language
+        SELECT source_language, source_text
+        FROM segments
+        WHERE project_id = ?
         """,
-        (project_id, project_id),
-    ).fetchall()
-    return rows
+        (project_id,),
+    ).fetchall():
+        add(row["source_language"], row["source_text"], is_default=True)
+
+    for row in conn.execute(
+        """
+        SELECT sv.source_language, sv.source_text
+        FROM source_variants sv
+        JOIN segments s ON s.id = sv.segment_id
+        WHERE s.project_id = ?
+          AND lower(sv.source_language) != lower(s.source_language)
+        """,
+        (project_id,),
+    ).fetchall():
+        add(row["source_language"], row["source_text"], is_default=False)
+
+    return sorted(
+        stats.values(),
+        key=lambda item: (
+            0 if item.get("is_default") else 1,
+            str(item.get("source_language") or "").lower(),
+        ),
+    )
 
 
 def json_list(raw):
@@ -9469,6 +9756,19 @@ def language_detail(project_id, target_language):
             text_value = str(row["text_value"] or "")
             language_character_count += len(text_value)
             language_word_count += len(SPELLCHECK_TOKEN_PATTERN.findall(text_value))
+        source_character_count = conn.execute(
+            """
+            SELECT COALESCE(SUM(length(COALESCE(source_text, ''))), 0) AS total
+            FROM segments
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()["total"]
+        translation_length_ratio = (
+            round((language_character_count / source_character_count) * 100, 2)
+            if source_character_count
+            else None
+        )
         dictionaries = conn.execute(
             """
             SELECT *
@@ -9506,6 +9806,7 @@ def language_detail(project_id, target_language):
         spellcheck_report=spellcheck_report,
         language_word_count=language_word_count,
         language_character_count=language_character_count,
+        translation_length_ratio=translation_length_ratio,
     )
 
 

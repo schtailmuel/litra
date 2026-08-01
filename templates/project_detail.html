@@ -26,6 +26,7 @@
           <div class="link-summary">
             <strong>{{ row.source_language }}</strong>
             <small>{{ "Primary source" if row.is_default else "Alternative source" }}</small>
+            <small>{{ row.word_count }} words &middot; {{ row.char_count }} characters</small>
           </div>
           <span>{{ row.segment_count }} / {{ segment_count }} segments</span>
         </div>
