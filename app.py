@@ -3165,14 +3165,118 @@ def parse_text_upload_lines(file_storage, field_name="TXT file"):
 
 
 SPELLCHECK_TOKEN_PATTERN = re.compile(r"[^\W\d_]+(?:['’\-][^\W\d_]+)*", re.UNICODE)
+SPELLCHECK_MAX_WORD_FORMS = 500000
 
 
 def normalize_spell_word(value):
     return str(value or "").strip().replace("’", "'").lower()
 
 
-def parse_hunspell_dictionary_words(dic_text):
+def parse_hunspell_flags(flags_text, flag_mode="single"):
+    raw = str(flags_text or "").strip()
+    if not raw:
+        return []
+    if flag_mode == "num":
+        return [token for token in re.split(r"[,\s]+", raw) if token]
+    if flag_mode == "long":
+        return [raw[index:index + 2] for index in range(0, len(raw), 2) if raw[index:index + 2]]
+    return list(raw)
+
+
+def parse_hunspell_affix_rules(aff_text):
+    prefix_rules = defaultdict(list)
+    suffix_rules = defaultdict(list)
+    flag_mode = "single"
+    if not aff_text:
+        return {"PFX": prefix_rules, "SFX": suffix_rules, "flag_mode": flag_mode}
+
+    lines = [str(line or "").strip() for line in str(aff_text or "").splitlines()]
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        if not line or line.startswith("#"):
+            continue
+        tokens = line.split()
+        if len(tokens) >= 2 and tokens[0] == "FLAG":
+            mode = tokens[1].strip().lower()
+            if mode in {"long", "num", "utf-8", "single"}:
+                flag_mode = "single" if mode == "utf-8" else mode
+            continue
+        if len(tokens) < 4 or tokens[0] not in {"PFX", "SFX"}:
+            continue
+        kind = tokens[0]
+        flag = tokens[1]
+        cross = tokens[2].upper() == "Y"
+        try:
+            count = int(tokens[3])
+        except ValueError:
+            continue
+
+        for _ in range(count):
+            if index >= len(lines):
+                break
+            rule_line = lines[index]
+            index += 1
+            if not rule_line or rule_line.startswith("#"):
+                continue
+            rule_tokens = rule_line.split()
+            if len(rule_tokens) < 5 or rule_tokens[0] != kind or rule_tokens[1] != flag:
+                continue
+
+            strip_part = "" if rule_tokens[2] == "0" else rule_tokens[2]
+            add_raw = "" if rule_tokens[3] == "0" else rule_tokens[3]
+            add_part = add_raw.split("/", 1)[0]
+            condition = rule_tokens[4]
+            entry = {
+                "strip": strip_part,
+                "add": add_part,
+                "condition": condition,
+                "cross": cross,
+            }
+            if kind == "PFX":
+                prefix_rules[flag].append(entry)
+            else:
+                suffix_rules[flag].append(entry)
+
+    return {"PFX": prefix_rules, "SFX": suffix_rules, "flag_mode": flag_mode}
+
+
+def affix_rule_matches(word, rule, kind):
+    value = str(word or "")
+    strip = rule.get("strip", "")
+    condition = str(rule.get("condition", ".") or ".")
+    if condition == ".":
+        return True
+    try:
+        if kind == "SFX":
+            return re.search(f"{condition}$", value) is not None
+        return re.search(f"^{condition}", value) is not None
+    except re.error:
+        return True
+
+
+def apply_affix_rule(word, rule, kind):
+    value = str(word or "")
+    strip = str(rule.get("strip", "") or "")
+    add = str(rule.get("add", "") or "")
+
+    if kind == "SFX":
+        if strip and not value.endswith(strip):
+            return None
+        base = value[:-len(strip)] if strip else value
+        return normalize_spell_word(base + add)
+
+    if strip and not value.startswith(strip):
+        return None
+    base = value[len(strip):] if strip else value
+    return normalize_spell_word(add + base)
+
+
+def parse_hunspell_dictionary_words(dic_text, aff_text=""):
     words = set()
+    affix_rules = parse_hunspell_affix_rules(aff_text)
+    flag_mode = affix_rules.get("flag_mode", "single")
     lines = str(dic_text or "").splitlines()
     start_index = 0
     if lines:
@@ -3183,10 +3287,68 @@ def parse_hunspell_dictionary_words(dic_text):
         line = str(raw or "").strip()
         if not line or line.startswith("#"):
             continue
-        candidate = line.split("\t", 1)[0].split(" ", 1)[0].split("/", 1)[0].strip()
-        normalized = normalize_spell_word(candidate)
-        if normalized:
-            words.add(normalized)
+        raw_token = line.split("\t", 1)[0].split(" ", 1)[0].strip()
+        if not raw_token:
+            continue
+
+        base, flags = raw_token, ""
+        if "/" in raw_token:
+            base, flags = raw_token.split("/", 1)
+            flags = flags.split(",", 1)[0]
+        normalized_base = normalize_spell_word(base)
+        if not normalized_base:
+            continue
+        words.add(normalized_base)
+
+        parsed_flags = parse_hunspell_flags(flags, flag_mode=flag_mode)
+
+        if not parsed_flags:
+            if len(words) >= SPELLCHECK_MAX_WORD_FORMS:
+                break
+            continue
+
+        prefix_forms = set()
+        suffix_forms = set()
+        for flag in parsed_flags:
+            for rule in affix_rules["PFX"].get(flag, []):
+                if not affix_rule_matches(normalized_base, rule, "PFX"):
+                    continue
+                form = apply_affix_rule(normalized_base, rule, "PFX")
+                if form:
+                    prefix_forms.add(form)
+                    words.add(form)
+            for rule in affix_rules["SFX"].get(flag, []):
+                if not affix_rule_matches(normalized_base, rule, "SFX"):
+                    continue
+                form = apply_affix_rule(normalized_base, rule, "SFX")
+                if form:
+                    suffix_forms.add(form)
+                    words.add(form)
+
+        for pref in prefix_forms:
+            for flag in parsed_flags:
+                for rule in affix_rules["SFX"].get(flag, []):
+                    if not rule.get("cross"):
+                        continue
+                    if not affix_rule_matches(pref, rule, "SFX"):
+                        continue
+                    form = apply_affix_rule(pref, rule, "SFX")
+                    if form:
+                        words.add(form)
+
+        for suff in suffix_forms:
+            for flag in parsed_flags:
+                for rule in affix_rules["PFX"].get(flag, []):
+                    if not rule.get("cross"):
+                        continue
+                    if not affix_rule_matches(suff, rule, "PFX"):
+                        continue
+                    form = apply_affix_rule(suff, rule, "PFX")
+                    if form:
+                        words.add(form)
+
+        if len(words) >= SPELLCHECK_MAX_WORD_FORMS:
+            break
     return words
 
 
@@ -3260,7 +3422,8 @@ def project_language_spellcheck_report(conn, project_id, target_language):
         """
         SELECT plc.language_key,
                ld.language_name,
-               ld.dic_content
+               ld.dic_content,
+               ld.aff_content
         FROM project_language_spellcheck_config plc
         JOIN language_dictionaries ld
           ON ld.language_key = plc.language_key
@@ -3297,7 +3460,10 @@ def project_language_spellcheck_report(conn, project_id, target_language):
         ).fetchall()
     ]
 
-    dictionary_words = parse_hunspell_dictionary_words(assigned["dic_content"])
+    dictionary_words = parse_hunspell_dictionary_words(
+        assigned["dic_content"],
+        assigned["aff_content"],
+    )
     summary = spellcheck_corpus_rows(corpus_rows, dictionary_words)
 
     text_rows = []
@@ -3423,27 +3589,45 @@ def build_pdf_document(page_streams):
 
 def wrap_highlighted_text_lines(highlighted_text, max_chars=90):
     wrapped = []
+    marker_pattern = re.compile(r"\[\[(.*?)\]\]")
     for raw_line in str(highlighted_text or "").splitlines() or [""]:
-        words = [word for word in raw_line.split(" ") if word != ""]
-        if not words:
+        spans = []
+        last_end = 0
+        for match in marker_pattern.finditer(raw_line):
+            start, end = match.span()
+            if start > last_end:
+                spans.append((raw_line[last_end:start], False))
+            spans.append((match.group(1), True))
+            last_end = end
+        if last_end < len(raw_line):
+            spans.append((raw_line[last_end:], False))
+        if not spans:
+            spans.append((raw_line, False))
+
+        segments = []
+        for text_value, highlighted in spans:
+            if text_value == "":
+                continue
+            for piece in re.findall(r"\S+|\s+", text_value):
+                if piece:
+                    segments.append((piece, highlighted and not piece.isspace()))
+
+        if not segments:
             wrapped.append([])
             continue
 
         current_line = []
         current_len = 0
-        for raw_word in words:
-            highlighted = raw_word.startswith("[[") and raw_word.endswith("]]") and len(raw_word) > 4
-            word = raw_word[2:-2] if highlighted else raw_word
-            token_len = len(word)
-            extra = token_len + (1 if current_line else 0)
-            if current_line and current_len + extra > max_chars:
+        for text_piece, highlighted in segments:
+            text_piece = text_piece.replace("[[", "").replace("]]", "")
+            token_len = len(text_piece)
+            if current_line and current_len + token_len > max_chars and not text_piece.isspace():
                 wrapped.append(current_line)
                 current_line = []
                 current_len = 0
-            if current_line:
-                current_line.append((" ", False))
-                current_len += 1
-            current_line.append((word, highlighted))
+            if not current_line and text_piece.isspace():
+                continue
+            current_line.append((text_piece, highlighted))
             current_len += token_len
         if current_line:
             wrapped.append(current_line)
@@ -6382,7 +6566,7 @@ def languages_management():
                     aff_content = ""
 
                 language_key = language_name.lower()
-                dictionary_words = parse_hunspell_dictionary_words(dic_content)
+                dictionary_words = parse_hunspell_dictionary_words(dic_content, aff_content)
                 if not dictionary_words:
                     flash("The .dic file does not contain usable word entries.")
                     return redirect(url_for("languages_management"))
@@ -13344,10 +13528,131 @@ def api_next_segment(token):
             ),
         )
         conn.commit()
+    return jsonify(
+        {
+            "status": "ok",
+            "segment": serialize_claimed_segment(conn, link, segment_id),
+            **assignment_payload(link, used, remaining),
+        }
+    )
+
+
+@app.post("/api/t/<token>/claim-by-identifier")
+@app.post("/api/t/<token>/claim-by-id")
+def api_claim_segment_by_identifier(token):
+    payload = request.get_json(silent=True) or {}
+    identifier = str(payload.get("identifier", "")).strip()
+    if not identifier:
+        return jsonify({"status": "invalid", "message": "Document identifier is required."}), 400
+
+    with db() as conn:
+        link = conn.execute(
+            "SELECT * FROM share_links WHERE token = ? AND revoked_at IS NULL",
+            (token,),
+        ).fetchone()
+        if not link:
+            abort(404)
+
+        conn.execute("BEGIN IMMEDIATE")
+
+        segment = conn.execute(
+            """
+            SELECT *
+            FROM segments
+            WHERE project_id = ?
+              AND lower(identifier) = lower(?)
+            LIMIT 1
+            """,
+            (link["project_id"], identifier),
+        ).fetchone()
+        if not segment:
+            remaining, used = link_remaining_credits(conn, link)
+            return jsonify(
+                {
+                    "status": "not_found",
+                    "message": "No segment found with that ID.",
+                    **assignment_payload(link, used, remaining),
+                }
+            )
+
+        existing_claim = conn.execute(
+            """
+            SELECT *
+            FROM translation_claims
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment["id"], link["target_language"]),
+        ).fetchone()
+        if existing_claim:
+            if existing_claim["share_link_id"] == link["id"] and existing_claim["status"] == "claimed":
+                remaining, used = link_remaining_credits(conn, link)
+                return jsonify(
+                    {
+                        "status": "ok",
+                        "segment": serialize_claimed_segment(conn, link, segment["id"]),
+                        **assignment_payload(link, used, remaining),
+                    }
+                )
+            remaining, used = link_remaining_credits(conn, link)
+            return jsonify(
+                {
+                    "status": "unavailable",
+                    "message": "That segment is already claimed.",
+                    **assignment_payload(link, used, remaining),
+                }
+            )
+
+        translation = conn.execute(
+            """
+            SELECT target_text
+            FROM translations
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment["id"], link["target_language"]),
+        ).fetchone()
+        if translation and str(translation["target_text"] or "").strip():
+            remaining, used = link_remaining_credits(conn, link)
+            return jsonify(
+                {
+                    "status": "translated",
+                    "message": "That segment already has a submitted translation.",
+                    **assignment_payload(link, used, remaining),
+                }
+            )
+
+        remaining, used = link_remaining_credits(conn, link)
+        if remaining is not None and remaining <= 0:
+            return jsonify(
+                {
+                    "status": "limit_reached",
+                    "message": "Assignment limit reached.",
+                    **assignment_payload(link, used, remaining),
+                }
+            )
+
+        conn.execute(
+            """
+            INSERT INTO translation_claims
+                (share_link_id, segment_id, target_language, translator_name, status, claimed_at)
+            VALUES (?, ?, ?, ?, 'claimed', ?)
+            """,
+            (
+                link["id"],
+                segment["id"],
+                link["target_language"],
+                link_translator_name(link),
+                now_iso(),
+            ),
+        )
+        conn.commit()
+
+        remaining, used = link_remaining_credits(conn, link)
         return jsonify(
             {
                 "status": "ok",
-                "segment": serialize_claimed_segment(conn, link, segment_id),
+                "segment": serialize_claimed_segment(conn, link, segment["id"]),
                 **assignment_payload(link, used, remaining),
             }
         )

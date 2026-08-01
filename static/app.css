@@ -2508,13 +2508,32 @@ button.danger-text-button:hover {
 
 .recent-shortcuts {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 0.5rem;
   min-height: 0;
 }
 
 .recent-shortcuts > strong {
   font-size: 0.85rem;
+}
+
+.claim-by-id-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: end;
+}
+
+.claim-by-id-form button {
+  min-height: 2rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.claim-by-id-form button.compact-button {
+  min-height: 1.8rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.76rem;
 }
 
 .recent-shortcut-list {

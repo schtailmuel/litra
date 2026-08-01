@@ -31,6 +31,9 @@ const els = {
   assignmentCount: document.querySelector("#assignmentCount"),
   languageCount: document.querySelector("#languageCount"),
   recentSubmissions: document.querySelector("#recentSubmissions"),
+  claimByIdForm: document.querySelector("#claimByIdForm"),
+  claimByIdInput: document.querySelector("#claimByIdInput"),
+  claimByIdButton: document.querySelector("#claimByIdButton"),
   segmentTitle: document.querySelector("#segmentTitle"),
   segmentMeta: document.querySelector("#segmentMeta"),
   sourceTabs: document.querySelector("#sourceTabs"),
@@ -755,6 +758,51 @@ async function getNextSegment() {
   setSaveState("Done", "saved");
 }
 
+async function claimSegmentById() {
+  const identifier = (els.claimByIdInput?.value || "").trim();
+  if (!identifier) {
+    setSaveState("Enter a document identifier", "conflict");
+    els.claimByIdInput?.focus();
+    return;
+  }
+
+  if (state.dirty && !window.confirm("Discard unsaved changes and claim another text?")) {
+    return;
+  }
+
+  if (els.claimByIdButton) {
+    els.claimByIdButton.disabled = true;
+  }
+  setSaveState("Claiming by identifier");
+  const response = await fetch(apiUrl("/claim-by-identifier"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ identifier }),
+  });
+  if (els.claimByIdButton) {
+    els.claimByIdButton.disabled = false;
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    setSaveState(data.message || "Claim failed", "conflict");
+    return;
+  }
+
+  updateAssignmentStatus(data);
+  if (data.status === "ok" && data.segment) {
+    renderSegment(data.segment);
+    if (els.claimByIdInput) {
+      els.claimByIdInput.value = "";
+    }
+    setSaveState("Claimed", "saved");
+    return;
+  }
+  setSaveState(data.message || "Not claimable", "conflict");
+}
+
 const qaWarningHelp = {
   empty_translation: {
     title: "Empty translation",
@@ -1204,6 +1252,10 @@ els.targetInstructions.addEventListener("input", markDirty);
 
 els.saveButton.addEventListener("click", () => saveSegment(false));
 els.nextAfterSaveButton.addEventListener("click", () => saveSegment(true));
+els.claimByIdForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  claimSegmentById();
+});
 els.skipButton.addEventListener("click", skipSegment);
 els.postCommentButton.addEventListener("click", submitComment);
 els.commentList.addEventListener("click", (event) => {
