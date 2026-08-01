@@ -8,6 +8,7 @@ import secrets
 import sqlite3
 import threading
 import time
+import unicodedata
 import zipfile
 from collections import Counter
 from collections import defaultdict, deque
@@ -3165,11 +3166,54 @@ def parse_text_upload_lines(file_storage, field_name="TXT file"):
 
 
 SPELLCHECK_TOKEN_PATTERN = re.compile(r"[^\W\d_]+(?:['’\-][^\W\d_]+)*", re.UNICODE)
-SPELLCHECK_MAX_WORD_FORMS = 500000
+SPELLCHECK_MAX_BASE_WORDS = 1000000
+SPELLCHECK_MAX_GENERATED_WORD_FORMS = 500000
 
 
 def normalize_spell_word(value):
-    return str(value or "").strip().replace("’", "'").lower()
+    normalized = unicodedata.normalize("NFC", str(value or ""))
+    return normalized.strip().replace("’", "'").lower()
+
+
+def is_spell_letter_or_mark(char):
+    category = unicodedata.category(str(char or "")[:1])
+    return category.startswith("L") or category.startswith("M")
+
+
+def iter_spell_token_spans(text):
+    value = str(text or "")
+    length = len(value)
+    index = 0
+    while index < length:
+        if not is_spell_letter_or_mark(value[index]):
+            index += 1
+            continue
+        start = index
+        index += 1
+        while index < length:
+            char = value[index]
+            if is_spell_letter_or_mark(char):
+                index += 1
+                continue
+            if (
+                char in "'’-"
+                and index + 1 < length
+                and is_spell_letter_or_mark(value[index + 1])
+            ):
+                index += 1
+                continue
+            break
+        end = index
+        while end > start and value[end - 1] in "'’-":
+            end -= 1
+        if end > start:
+            yield start, end, value[start:end]
+        if index <= end:
+            index = end + 1
+
+
+def count_spell_tokens(text):
+    return sum(1 for _start, _end, _token in iter_spell_token_spans(text))
 
 
 def parse_hunspell_flags(flags_text, flag_mode="single"):
@@ -3301,6 +3345,19 @@ def parse_hunspell_dictionary_words(dic_text, aff_text=""):
     words = set()
     affix_rules = parse_hunspell_affix_rules(aff_text)
     flag_mode = affix_rules.get("flag_mode", "single")
+    base_word_count = 0
+    generated_word_count = 0
+
+    def add_generated_form(form):
+        nonlocal generated_word_count
+        token = normalize_spell_word(form)
+        if not token or token in words:
+            return
+        if generated_word_count >= SPELLCHECK_MAX_GENERATED_WORD_FORMS:
+            return
+        words.add(token)
+        generated_word_count += 1
+
     lines = str(dic_text or "").splitlines()
     start_index = 0
     if lines:
@@ -3319,13 +3376,15 @@ def parse_hunspell_dictionary_words(dic_text, aff_text=""):
         normalized_base = normalize_spell_word(base)
         if not normalized_base:
             continue
-        words.add(normalized_base)
+        if normalized_base not in words:
+            if base_word_count >= SPELLCHECK_MAX_BASE_WORDS:
+                break
+            words.add(normalized_base)
+            base_word_count += 1
 
         parsed_flags = parse_hunspell_flags(flags, flag_mode=flag_mode)
 
         if not parsed_flags:
-            if len(words) >= SPELLCHECK_MAX_WORD_FORMS:
-                break
             continue
 
         prefix_forms = set()
@@ -3337,14 +3396,14 @@ def parse_hunspell_dictionary_words(dic_text, aff_text=""):
                 form = apply_affix_rule(normalized_base, rule, "PFX")
                 if form:
                     prefix_forms.add(form)
-                    words.add(form)
+                    add_generated_form(form)
             for rule in affix_rules["SFX"].get(flag, []):
                 if not affix_rule_matches(normalized_base, rule, "SFX"):
                     continue
                 form = apply_affix_rule(normalized_base, rule, "SFX")
                 if form:
                     suffix_forms.add(form)
-                    words.add(form)
+                    add_generated_form(form)
 
         for pref in prefix_forms:
             for flag in parsed_flags:
@@ -3355,7 +3414,7 @@ def parse_hunspell_dictionary_words(dic_text, aff_text=""):
                         continue
                     form = apply_affix_rule(pref, rule, "SFX")
                     if form:
-                        words.add(form)
+                        add_generated_form(form)
 
         for suff in suffix_forms:
             for flag in parsed_flags:
@@ -3366,10 +3425,7 @@ def parse_hunspell_dictionary_words(dic_text, aff_text=""):
                         continue
                     form = apply_affix_rule(suff, rule, "PFX")
                     if form:
-                        words.add(form)
-
-        if len(words) >= SPELLCHECK_MAX_WORD_FORMS:
-            break
+                        add_generated_form(form)
     return words
 
 
@@ -3385,7 +3441,7 @@ def spellcheck_corpus_rows(rows, dictionary_words):
         corpus_type = str(row.get("corpus_type") or "text")
         sample_ref = f"{project_name} · {identifier} ({corpus_type})"
 
-        for token in SPELLCHECK_TOKEN_PATTERN.findall(text):
+        for _start, _end, token in iter_spell_token_spans(text):
             normalized = normalize_spell_word(token)
             if len(normalized) < 2:
                 continue
@@ -3422,10 +3478,8 @@ def spellcheck_highlight_text(text, dictionary_words):
     pieces = []
     unknown_words = []
     last_end = 0
-    for match in SPELLCHECK_TOKEN_PATTERN.finditer(value):
-        start, end = match.span()
+    for start, end, token in iter_spell_token_spans(value):
         pieces.append(value[last_end:start])
-        token = match.group(0)
         normalized = normalize_spell_word(token)
         if len(normalized) >= 2 and normalized not in dictionary_words:
             pieces.append(f"[[{token}]]")
@@ -3486,7 +3540,7 @@ def project_language_spellcheck_report(conn, project_id, target_language):
     for row in corpus_rows:
         text_value = str(row.get("text_value") or "")
         target_char_count += len(text_value)
-        target_word_count += len(SPELLCHECK_TOKEN_PATTERN.findall(text_value))
+        target_word_count += count_spell_tokens(text_value)
 
     source_stats = {}
 
@@ -3504,7 +3558,7 @@ def project_language_spellcheck_report(conn, project_id, target_language):
             },
         )
         entry["text_count"] += 1
-        entry["word_count"] += len(SPELLCHECK_TOKEN_PATTERN.findall(text_value))
+        entry["word_count"] += count_spell_tokens(text_value)
         entry["char_count"] += len(text_value)
 
     for row in conn.execute(
@@ -5398,7 +5452,7 @@ def source_language_rows(conn, project_id):
             },
         )
         entry["segment_count"] += 1
-        entry["word_count"] += len(SPELLCHECK_TOKEN_PATTERN.findall(text_value))
+        entry["word_count"] += count_spell_tokens(text_value)
         entry["char_count"] += len(text_value)
         if is_default:
             entry["is_default"] = True
@@ -9755,7 +9809,7 @@ def language_detail(project_id, target_language):
         for row in effective_text_rows:
             text_value = str(row["text_value"] or "")
             language_character_count += len(text_value)
-            language_word_count += len(SPELLCHECK_TOKEN_PATTERN.findall(text_value))
+            language_word_count += count_spell_tokens(text_value)
         source_character_count = conn.execute(
             """
             SELECT COALESCE(SUM(length(COALESCE(source_text, ''))), 0) AS total
