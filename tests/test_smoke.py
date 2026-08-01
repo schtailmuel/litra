@@ -302,10 +302,10 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
 
     manager_stats_page = client.get(f"/human-evaluation/{project['id']}")
     assert manager_stats_page.status_code == 200
-    assert b"Export LaTeX" in manager_stats_page.data
+    assert b"View LaTeX" in manager_stats_page.data
     assert b"Sentence Votes" in manager_stats_page.data
-    assert b"data-action=\"export-ranking-latex\"" in manager_stats_page.data
-    assert b"data-action=\"export-pairwise-latex\"" in manager_stats_page.data
+    assert b"data-action=\"show-ranking-latex\"" in manager_stats_page.data
+    assert b"data-action=\"show-pairwise-latex\"" in manager_stats_page.data
 
     public_stats_api = client.get("/api/he/eval-token/stats")
     assert public_stats_api.status_code == 200
