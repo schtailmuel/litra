@@ -1355,7 +1355,7 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
                 "Hallo Welt",
                 "",
                 "submitted",
-                "[]",
+                json.dumps([{"code": "special_symbols", "label": "Special symbol count differs"}]),
                 1,
                 "translator",
                 litra_app.now_iso(),
@@ -1427,6 +1427,14 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
     assert reviewer_fast_list.status_code == 200
     assert b"Thread comments" in reviewer_fast_list.data
     assert b"Needs tone adjustment" in reviewer_fast_list.data
+
+    reviewer_fast_list_warning = client.get("/r/rev-1/texts?warnings=1&warning_code=special_symbols")
+    assert reviewer_fast_list_warning.status_code == 200
+    assert b"msg-1" in reviewer_fast_list_warning.data
+
+    reviewer_fast_list_other_warning = client.get("/r/rev-1/texts?warnings=1&warning_code=markdown_links")
+    assert reviewer_fast_list_other_warning.status_code == 200
+    assert b"No rows match the filters" in reviewer_fast_list_other_warning.data
 
     reviewer_overview = client.get("/r/rev-1")
     assert reviewer_overview.status_code == 200
@@ -1892,3 +1900,31 @@ def test_qa_warning_items_accepts_matching_uppercase_style(monkeypatch, tmp_path
 
     warning_codes = {item["code"] for item in warnings}
     assert "uppercase_text" not in warning_codes
+
+
+def test_qa_warning_items_detects_start_letter_case_mismatch(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    warnings = litra_app.qa_warning_items(
+        "Start with uppercase in source.",
+        "begin lowercase in translation.",
+    )
+
+    warning_codes = {item["code"] for item in warnings}
+    assert "start_letter_case" in warning_codes
+
+
+def test_qa_warning_items_accepts_matching_start_letter_case(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    warnings = litra_app.qa_warning_items(
+        "Start with uppercase in source.",
+        "Begin uppercase in translation.",
+    )
+
+    warning_codes = {item["code"] for item in warnings}
+    assert "start_letter_case" not in warning_codes

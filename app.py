@@ -5636,6 +5636,7 @@ QA_WARNING_CODE_OPTIONS = [
     ("missing_numbers", "Missing numbers"),
     ("changed_punctuation", "Changed punctuation"),
     ("length_ratio", "Unusual length ratio"),
+    ("start_letter_case", "Start letter case mismatch"),
     ("markdown_links", "Markdown link count differs"),
     ("markdown_headings", "Markdown heading count differs"),
     ("special_symbols", "Special symbol count differs"),
@@ -5719,6 +5720,23 @@ def qa_warning_items(source_text, target_text):
     target_len = len(target.strip())
     if source_len and (target_len / source_len < 0.35 or target_len / source_len > 2.8):
         add("length_ratio", "Translation length looks unusual")
+
+    def first_cased_letter(value):
+        for char in str(value or ""):
+            if char.isalpha() and char.lower() != char.upper():
+                return char
+        return None
+
+    source_first = first_cased_letter(source)
+    target_first = first_cased_letter(target)
+    if source_first and target_first:
+        source_is_upper = source_first == source_first.upper()
+        target_is_upper = target_first == target_first.upper()
+        if source_is_upper != target_is_upper:
+            add(
+                "start_letter_case",
+                "First letter casing differs between source and translation",
+            )
 
     source_links = len(re.findall(r"\[[^\]]+\]\(https?://[^)\s]+\)", source))
     target_links = len(re.findall(r"\[[^\]]+\]\(https?://[^)\s]+\)", target))
@@ -11468,6 +11486,7 @@ def reviewer_texts_redirect(token, form):
             missing=form.get("missing", ""),
             comments=form.get("comments", ""),
             warnings=form.get("warnings", ""),
+            warning_code=form.get("warning_code", ""),
         )
     )
 
@@ -11488,7 +11507,14 @@ def review_project_texts(token):
         "missing": request.values.get("missing", "").strip(),
         "comments": request.values.get("comments", "").strip(),
         "warnings": request.values.get("warnings", "").strip(),
+        "warning_code": normalize_qa_warning_code(request.values.get("warning_code", "")),
     }
+
+    wants_json = (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or request.accept_mimetypes["application/json"]
+        >= request.accept_mimetypes["text/html"]
+    )
 
     with db() as conn:
         link = review_link_for_token(conn, token)
@@ -11533,7 +11559,10 @@ def review_project_texts(token):
                 requested_status = "approved"
             status = normalize_status(requested_status, target_text, "")
             if action == "mark_reviewed" and status != "approved":
-                flash("A translation is required before it can be marked reviewed.")
+                message = "A translation is required before it can be marked reviewed."
+                if wants_json:
+                    return jsonify({"status": "error", "message": message}), 400
+                flash(message)
                 return reviewer_texts_redirect(token, request.form)
 
             current = conn.execute(
@@ -11550,15 +11579,31 @@ def review_project_texts(token):
             except ValueError:
                 client_version = 0
             if current and client_version != current["version"]:
-                flash("This translation changed since you opened it. Reload and try again.")
+                message = "This translation changed since you opened it. Reload and try again."
+                if wants_json:
+                    return (
+                        jsonify(
+                            {
+                                "status": "conflict",
+                                "message": message,
+                                "version": current["version"],
+                            }
+                        ),
+                        409,
+                    )
+                flash(message)
                 return reviewer_texts_redirect(token, request.form)
             if not current and client_version != 0:
-                flash("This translation changed since you opened it. Reload and try again.")
+                message = "This translation changed since you opened it. Reload and try again."
+                if wants_json:
+                    return jsonify({"status": "conflict", "message": message, "version": 0}), 409
+                flash(message)
                 return reviewer_texts_redirect(token, request.form)
 
             stamp = now_iso()
             qa_warnings = qa_warnings_json(segment["source_text"], target_text)
             if current:
+                updated_version = current["version"] + 1
                 conn.execute(
                     """
                     UPDATE translations
@@ -11584,6 +11629,7 @@ def review_project_texts(token):
                     ),
                 )
             else:
+                updated_version = 1
                 conn.execute(
                     """
                     INSERT INTO translations
@@ -11614,7 +11660,30 @@ def review_project_texts(token):
                     ),
                 )
             conn.commit()
-            flash("Translation reviewed." if status == "approved" else "Translation updated.")
+            message = "Translation reviewed." if status == "approved" else "Translation updated."
+            if wants_json:
+                qa_warning_codes = []
+                try:
+                    qa_warning_codes = [
+                        item.get("code", "")
+                        for item in json.loads(qa_warnings or "[]")
+                        if isinstance(item, dict) and item.get("code")
+                    ]
+                except json.JSONDecodeError:
+                    qa_warning_codes = []
+                return jsonify(
+                    {
+                        "status": "ok",
+                        "message": message,
+                        "translation_status": status,
+                        "version": updated_version,
+                        "updated_by": reviewer,
+                        "updated_at": stamp,
+                        "qa_warning_count": qa_warning_count(qa_warnings),
+                        "qa_warning_codes": qa_warning_codes,
+                    }
+                )
+            flash(message)
             return reviewer_texts_redirect(token, request.form)
 
         where = ["s.project_id = ?"]
@@ -11655,6 +11724,9 @@ def review_project_texts(token):
             )
         if filters["warnings"]:
             where.append("COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]')")
+        if filters.get("warning_code"):
+            where.append("replace(lower(COALESCE(t.qa_warnings, '[]')), ' ', '') LIKE ?")
+            params.append(f'%"code":"{filters["warning_code"]}"%')
         where_sql = " AND ".join(where)
         slot_join = """
             FROM segments s
@@ -11823,6 +11895,7 @@ def review_project_texts_download(token):
         "missing": request.args.get("missing", "").strip(),
         "comments": request.args.get("comments", "").strip(),
         "warnings": request.args.get("warnings", "").strip(),
+        "warning_code": normalize_qa_warning_code(request.args.get("warning_code", "")),
     }
 
     with db() as conn:
@@ -11868,6 +11941,9 @@ def review_project_texts_download(token):
             )
         if filters["warnings"]:
             where.append("COALESCE(t.qa_warnings, '[]') NOT IN ('', '[]')")
+        if filters.get("warning_code"):
+            where.append("replace(lower(COALESCE(t.qa_warnings, '[]')), ' ', '') LIKE ?")
+            params.append(f'%"code":"{filters["warning_code"]}"%')
         where_sql = " AND ".join(where)
         slot_join = """
             FROM segments s
@@ -12347,8 +12423,22 @@ def review_project(token):
             flash("Translation reviewed." if status == "approved" else "Translation updated.")
             return reviewer_redirect(token, page, segment_id)
 
+        pending_segment_scope = """
+            FROM segments s
+            WHERE s.project_id = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM project_languages pl
+                  LEFT JOIN translations t
+                    ON t.segment_id = s.id
+                   AND lower(t.target_language) = lower(pl.target_language)
+                  WHERE pl.project_id = s.project_id
+                    AND COALESCE(t.status, 'untranslated') != 'approved'
+              )
+        """
+
         segment_count = conn.execute(
-            "SELECT COUNT(*) AS count FROM segments WHERE project_id = ?",
+            f"SELECT COUNT(*) AS count {pending_segment_scope}",
             (link["project_id"],),
         ).fetchone()["count"]
         if languages:
@@ -12402,11 +12492,10 @@ def review_project(token):
             }
 
         segments = conn.execute(
-            """
-            SELECT *
-            FROM segments
-            WHERE project_id = ?
-            ORDER BY ordinal
+            f"""
+            SELECT s.*
+            {pending_segment_scope}
+            ORDER BY s.ordinal
             LIMIT ? OFFSET ?
             """,
             (link["project_id"], per_page, offset),

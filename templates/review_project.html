@@ -4,7 +4,7 @@
   <div class="page-head">
     <div>
       <h1>Project Review</h1>
-      <p>{{ link.project_name }} &middot; {{ link.source_language }} source &middot; {{ reviewer }}</p>
+      <p>{{ link.project_name }} &middot; {{ link.source_language }} source &middot; {{ reviewer }} &middot; pending segments only</p>
     </div>
     <div class="page-actions">
       <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token) }}">Fast List</a>
@@ -38,10 +38,11 @@
       <p>The project manager needs to add target languages before review can start.</p>
     </section>
   {% else %}
-    <section class="review-stack section-gap">
-      {% for row in review_rows %}
-        {% set segment = row.segment %}
-        <article class="review-segment" id="segment-{{ segment.id }}">
+    {% if review_rows %}
+      <section class="review-stack section-gap">
+        {% for row in review_rows %}
+          {% set segment = row.segment %}
+          <article class="review-segment" id="segment-{{ segment.id }}">
           <div class="review-segment-head">
             <div>
               <h2>{{ segment.identifier }}</h2>
@@ -183,8 +184,14 @@
               </div>
             {% endfor %}
           </div>
-        </article>
-      {% endfor %}
-    </section>
+          </article>
+        {% endfor %}
+      </section>
+    {% else %}
+      <section class="empty-state section-gap">
+        <h2>All segments are already reviewed</h2>
+        <p>Everything currently has reviewed translations for all target languages.</p>
+      </section>
+    {% endif %}
   {% endif %}
 {% endblock %}

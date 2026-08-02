@@ -2359,6 +2359,25 @@ button.danger-text-button:hover {
   font-weight: 700;
 }
 
+.fast-review-feedback {
+  min-height: 1.05rem;
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.fast-review-feedback.busy {
+  color: var(--accent-dark);
+}
+
+.fast-review-feedback.saved {
+  color: var(--ok);
+}
+
+.fast-review-feedback.error {
+  color: var(--danger);
+}
+
 .review-card-head {
   display: flex;
   align-items: center;
