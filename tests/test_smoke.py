@@ -285,13 +285,14 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     assert manager_download.status_code == 200
     manager_payload = json.loads(manager_download.get_data(as_text=True))
     assert manager_payload["project"]["id"] == project["id"]
-    assert len(manager_payload["ratings"]) == 1
+    assert len(manager_payload["documents"]) == 1
+    assert manager_payload["documents"][0]["models"][0]["ratings"][0]["rank"] in {1, 2}
 
     evaluator_download = client.get("/he/eval-token/download-annotations")
     assert evaluator_download.status_code == 200
     evaluator_payload = json.loads(evaluator_download.get_data(as_text=True))
     assert evaluator_payload["project"]["id"] == project["id"]
-    assert len(evaluator_payload["ratings"]) == 1
+    assert len(evaluator_payload["documents"]) == 1
 
     public_stats_page = client.get("/he/eval-token/stats")
     assert public_stats_page.status_code == 200
@@ -596,6 +597,182 @@ def test_human_evaluation_project_flow(monkeypatch, tmp_path):
         ).fetchone()["count"]
     assert removed_rating_count == 0
     assert removed_vote_count == 0
+
+
+def test_human_evaluation_annotation_export_import_roundtrip(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("manager", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("manager",),
+        ).fetchone()["id"]
+
+        stamp = litra_app.now_iso()
+        project_id = conn.execute(
+            """
+            INSERT INTO human_eval_projects
+                (
+                    owner_id,
+                    name,
+                    source_language,
+                    target_language,
+                    evaluator_public_stats_enabled,
+                    evaluator_auto_rank_enabled,
+                    default_eval_layout,
+                    created_at
+                )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (owner_id, "Roundtrip Source", "German", "English", 1, 0, "dynamic", stamp),
+        ).lastrowid
+
+        model_a_id = conn.execute(
+            "INSERT INTO human_eval_models (project_id, model_name, created_at) VALUES (?, ?, ?)",
+            (project_id, "Model A", stamp),
+        ).lastrowid
+        model_b_id = conn.execute(
+            "INSERT INTO human_eval_models (project_id, model_name, created_at) VALUES (?, ?, ?)",
+            (project_id, "Model B", stamp),
+        ).lastrowid
+
+        item_one = conn.execute(
+            """
+            INSERT INTO human_eval_items (project_id, ordinal, source_text, reference_text, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (project_id, 1, "Hallo", "Hello", stamp),
+        ).lastrowid
+        item_two = conn.execute(
+            """
+            INSERT INTO human_eval_items (project_id, ordinal, source_text, reference_text, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (project_id, 2, "Tschuess", "Bye", stamp),
+        ).lastrowid
+
+        conn.execute(
+            "INSERT INTO human_eval_outputs (item_id, model_id, output_text, created_at) VALUES (?, ?, ?, ?)",
+            (item_one, model_a_id, "Hello there", stamp),
+        )
+        conn.execute(
+            "INSERT INTO human_eval_outputs (item_id, model_id, output_text, created_at) VALUES (?, ?, ?, ?)",
+            (item_one, model_b_id, "Hi there", stamp),
+        )
+        conn.execute(
+            "INSERT INTO human_eval_outputs (item_id, model_id, output_text, created_at) VALUES (?, ?, ?, ?)",
+            (item_two, model_a_id, "Goodbye", stamp),
+        )
+        conn.execute(
+            "INSERT INTO human_eval_outputs (item_id, model_id, output_text, created_at) VALUES (?, ?, ?, ?)",
+            (item_two, model_b_id, "Bye now", stamp),
+        )
+
+        link_id = conn.execute(
+            """
+            INSERT INTO human_eval_links (project_id, token, evaluator_name, credit_limit, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (project_id, "eval-roundtrip", "Alice", 3, stamp),
+        ).lastrowid
+        rating_id = conn.execute(
+            "INSERT INTO human_eval_ratings (link_id, item_id, created_at) VALUES (?, ?, ?)",
+            (link_id, item_one, stamp),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO human_eval_rankings (rating_id, model_id, rank_value, error_span, comment)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                rating_id,
+                model_a_id,
+                1,
+                '{"source_marks":[{"start":0,"end":5,"text":"Hallo","note":"term"}],"style_marks":[]}',
+                "best",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO human_eval_rankings (rating_id, model_id, rank_value, error_span, comment)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (rating_id, model_b_id, 2, "", "second"),
+        )
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = owner_id
+
+    export_response = client.get(f"/human-evaluation/{project_id}/download-annotations")
+    assert export_response.status_code == 200
+    export_payload = json.loads(export_response.get_data(as_text=True))
+    assert export_payload["project"]["name"] == "Roundtrip Source"
+    assert len(export_payload["documents"]) == 2
+    assert len(export_payload["documents"][0]["models"]) == 2
+    assert export_payload["documents"][0]["models"][0]["output_text"] in {"Hello there", "Hi there"}
+
+    import_response = client.post(
+        "/human-evaluation/import-annotations",
+        data={
+            "name": "Roundtrip Imported",
+            "annotations_json": (
+                BytesIO((json.dumps(export_payload, ensure_ascii=False) + "\n").encode("utf-8")),
+                "annotations.json",
+            ),
+        },
+        content_type="multipart/form-data",
+    )
+    assert import_response.status_code == 302
+    assert "/human-evaluation/" in import_response.headers["Location"]
+
+    with litra_app.db() as conn:
+        imported_project = conn.execute(
+            "SELECT * FROM human_eval_projects WHERE owner_id = ? AND name = ?",
+            (owner_id, "Roundtrip Imported"),
+        ).fetchone()
+        assert imported_project is not None
+        assert imported_project["source_language"] == "German"
+        assert imported_project["target_language"] == "English"
+        assert imported_project["default_eval_layout"] == "dynamic"
+
+        imported_models = conn.execute(
+            "SELECT model_name FROM human_eval_models WHERE project_id = ? ORDER BY model_name",
+            (imported_project["id"],),
+        ).fetchall()
+        assert [row["model_name"] for row in imported_models] == ["Model A", "Model B"]
+
+        imported_items = conn.execute(
+            "SELECT * FROM human_eval_items WHERE project_id = ? ORDER BY ordinal",
+            (imported_project["id"],),
+        ).fetchall()
+        assert len(imported_items) == 2
+        assert imported_items[0]["source_text"] == "Hallo"
+
+        imported_rankings = conn.execute(
+            """
+            SELECT hrk.rank_value, hrk.comment
+            FROM human_eval_rankings hrk
+            JOIN human_eval_ratings hr ON hr.id = hrk.rating_id
+            JOIN human_eval_links hel ON hel.id = hr.link_id
+            WHERE hel.project_id = ?
+            ORDER BY hrk.rank_value
+            """,
+            (imported_project["id"],),
+        ).fetchall()
+        assert len(imported_rankings) == 2
+        assert imported_rankings[0]["rank_value"] == 1
+        assert imported_rankings[0]["comment"] == "best"
 
 
 def test_human_evaluation_project_allows_missing_reference(monkeypatch, tmp_path):
@@ -1043,6 +1220,194 @@ def test_project_access_sharing_and_dashboards(monkeypatch, tmp_path):
     assert b"Shared Eval" not in human_eval_dashboard_after.data
 
 
+def test_dashboard_imports_exported_project_jsonl(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("owner",),
+        ).fetchone()["id"]
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = owner_id
+
+    exported_jsonl = "\n".join(
+        [
+            json.dumps(
+                {
+                    "identifier": "msg-1",
+                    "source_language": "English",
+                    "source_text": "Hello",
+                    "instructions": "Be concise",
+                    "topic": "greeting",
+                    "languages": ["German", "French"],
+                    "project_review_links": [
+                        {
+                            "reviewer_name": "Rita",
+                            "created_at": "2026-08-03T08:00:00+00:00",
+                        }
+                    ],
+                    "project_creator_links": [
+                        {
+                            "creator_name": "Carla",
+                            "created_at": "2026-08-03T08:05:00+00:00",
+                        }
+                    ],
+                    "source_flags": [
+                        {
+                            "language": "German",
+                            "translator": "sam",
+                            "note": "Check glossary",
+                            "created_at": "2026-08-03T09:00:00+00:00",
+                        }
+                    ],
+                    "translations": [
+                        {
+                            "language": "German",
+                            "target_text": "Hallo",
+                            "target_instructions": "Kurz halten",
+                            "comment": "Looks good",
+                            "status": "approved",
+                            "qa_warnings": [],
+                            "updated_by": "sam",
+                            "updated_at": "2026-08-03T10:00:00+00:00",
+                        },
+                        {
+                            "language": "French",
+                            "target_text": "",
+                            "target_instructions": "",
+                            "comment": "",
+                            "status": "untranslated",
+                            "qa_warnings": [],
+                            "updated_by": "",
+                            "updated_at": "",
+                        },
+                    ],
+                }
+            ),
+            json.dumps(
+                {
+                    "identifier": "msg-2",
+                    "source_language": "English",
+                    "source_text": "Goodbye",
+                    "instructions": "",
+                    "tgt_lang": "Italian",
+                    "tgt_text": "Addio",
+                    "tgt_instructions": "",
+                    "comment": "imported from legacy export",
+                    "status": "submitted",
+                    "qa_warnings": [],
+                    "updated_by": "luca",
+                    "updated_at": "2026-08-03T10:05:00+00:00",
+                }
+            ),
+            "",
+        ]
+    )
+
+    response = client.post(
+        "/dashboard/import-project-export",
+        data={
+            "name": "Imported Export",
+            "jsonl": (BytesIO(exported_jsonl.encode("utf-8")), "exported.jsonl"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 302
+    assert "/projects/" in response.headers["Location"]
+
+    with litra_app.db() as conn:
+        project = conn.execute(
+            "SELECT * FROM projects WHERE owner_id = ? AND name = ?",
+            (owner_id, "Imported Export"),
+        ).fetchone()
+        assert project is not None
+        assert project["source_language"] == "English"
+
+        segments = conn.execute(
+            "SELECT * FROM segments WHERE project_id = ? ORDER BY ordinal",
+            (project["id"],),
+        ).fetchall()
+        assert len(segments) == 2
+        first_metadata = json.loads(segments[0]["metadata"])
+        assert first_metadata["topic"] == "greeting"
+
+        languages = conn.execute(
+            "SELECT target_language FROM project_languages WHERE project_id = ? ORDER BY target_language",
+            (project["id"],),
+        ).fetchall()
+        assert [row["target_language"] for row in languages] == ["French", "German", "Italian"]
+
+        german_translation = conn.execute(
+            """
+            SELECT t.*
+            FROM translations t
+            JOIN segments s ON s.id = t.segment_id
+            WHERE s.project_id = ?
+              AND s.identifier = ?
+              AND t.target_language = ?
+            """,
+            (project["id"], "msg-1", "German"),
+        ).fetchone()
+        assert german_translation is not None
+        assert german_translation["target_text"] == "Hallo"
+        assert german_translation["status"] == "approved"
+        assert german_translation["updated_by"] == "sam"
+
+        italian_translation = conn.execute(
+            """
+            SELECT t.*
+            FROM translations t
+            JOIN segments s ON s.id = t.segment_id
+            WHERE s.project_id = ?
+              AND s.identifier = ?
+              AND t.target_language = ?
+            """,
+            (project["id"], "msg-2", "Italian"),
+        ).fetchone()
+        assert italian_translation is not None
+        assert italian_translation["target_text"] == "Addio"
+        assert italian_translation["updated_by"] == "luca"
+
+        source_flag = conn.execute(
+            """
+            SELECT *
+            FROM source_flags sf
+            JOIN segments s ON s.id = sf.segment_id
+            WHERE s.project_id = ?
+              AND s.identifier = ?
+              AND sf.target_language = ?
+            """,
+            (project["id"], "msg-1", "German"),
+        ).fetchone()
+        assert source_flag is not None
+        assert source_flag["note"] == "Check glossary"
+
+        review_links = conn.execute(
+            "SELECT reviewer_name FROM review_links WHERE project_id = ? ORDER BY reviewer_name",
+            (project["id"],),
+        ).fetchall()
+        assert [row["reviewer_name"] for row in review_links] == ["Rita"]
+
+        creator_links = conn.execute(
+            "SELECT creator_name FROM creator_links WHERE project_id = ? ORDER BY creator_name",
+            (project["id"],),
+        ).fetchall()
+        assert [row["creator_name"] for row in creator_links] == ["Carla"]
+
+
 def test_project_detail_recompute_project_qa(monkeypatch, tmp_path):
     litra_app = importlib.import_module("app")
     monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
@@ -1449,6 +1814,101 @@ def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_p
     assert len(lines) == 1
     payload = json.loads(lines[0])
     assert payload["identifier"] == "msg-1"
+    assert payload["project_review_links"][0]["reviewer_name"] == "reviewer"
+
+
+def test_export_project_jsonl_for_import_uses_full_schema_with_single_language(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    mapping = json.dumps(
+        {
+            "name": "custom",
+            "file_type": "jsonl",
+            "source_text_path": "prompt",
+            "source_language_path": "src_lang",
+            "identifier_path": "msg_id",
+            "target_text_path": "translation",
+            "target_language_path": "lang",
+        },
+        ensure_ascii=False,
+    )
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("owner",),
+        ).fetchone()["id"]
+
+        project_id = conn.execute(
+            """
+            INSERT INTO projects (owner_id, name, source_language, source_editable, import_mapping, created_at)
+            VALUES (?, ?, ?, 1, ?, ?)
+            """,
+            (owner_id, "Format Export", "English", mapping, litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO project_languages (project_id, target_language, created_at) VALUES (?, ?, ?)",
+            (project_id, "German", litra_app.now_iso()),
+        )
+        segment_id = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "msg-1", 1, "English", "Hello world", "", "{}", litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO translations
+                (segment_id, target_language, target_text, comment, status, qa_warnings, version, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                segment_id,
+                "German",
+                "Hallo Welt",
+                "",
+                "submitted",
+                "[]",
+                1,
+                "translator",
+                litra_app.now_iso(),
+            ),
+        )
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = owner_id
+
+    response = client.post(
+        f"/projects/{project_id}/export-project-jsonl",
+        data={"languages": ["German"]},
+    )
+    assert response.status_code == 200
+    lines = [line for line in response.get_data(as_text=True).splitlines() if line.strip()]
+    assert len(lines) == 1
+    payload = json.loads(lines[0])
+    assert payload["identifier"] == "msg-1"
+    assert payload["source_text"] == "Hello world"
+    assert isinstance(payload["translations"], list)
+    assert payload["translations"][0]["language"] == "German"
+    assert payload["translations"][0]["target_text"] == "Hallo Welt"
+
+    disposition = response.headers.get("Content-Disposition", "")
+    assert "Format_Export-" in disposition
+    assert disposition.endswith(".jsonl")
+    assert "-import" not in disposition
 
 
 def test_translator_recent_submissions_can_be_deleted(monkeypatch, tmp_path):

@@ -2654,6 +2654,32 @@ IDENTIFIER_KEYS = ["identifier", "message_id", "id", "text_id", "segment_id"]
 TARGET_LANGUAGE_KEYS = ["tgt_lang", "target_language"]
 TARGET_TEXT_KEYS = ["tgt_text", "target_text", "translation", "translated_text", "translated_prompt"]
 TARGET_COMMENT_KEYS = ["comment", "tgt_comment"]
+PROJECT_EXPORT_RESERVED_KEYS = {
+    "identifier",
+    "source_language",
+    "source_text",
+    "instructions",
+    "languages",
+    "source_flags",
+    "source_flag_count",
+    "translations",
+    "language",
+    "target_language",
+    "tgt_lang",
+    "target_text",
+    "tgt_text",
+    "target_instructions",
+    "tgt_instructions",
+    "comment",
+    "status",
+    "qa_warnings",
+    "updated_by",
+    "updated_at",
+    "review_links",
+    "project_review_links",
+    "creator_links",
+    "project_creator_links",
+}
 COMMENT_IMPORT_ID_KEYS = [
     *IDENTIFIER_KEYS,
     "document_id",
@@ -2931,6 +2957,227 @@ def parse_jsonl(file_storage, mapping=None):
         raise ValueError("The JSONL file did not contain any rows.")
 
     return source_language, rows
+
+
+def parse_project_export_jsonl(file_storage):
+    rows = []
+    source_language = None
+    seen_identifiers = set()
+    review_links = []
+    creator_links = []
+
+    for line_no, item in load_import_items(file_storage, "jsonl", ""):
+        identifier = str(item.get("identifier", "")).strip() or f"seg-{line_no:06d}"
+        base_identifier = identifier
+        suffix = 2
+        while identifier in seen_identifiers:
+            identifier = f"{base_identifier}-{suffix}"
+            suffix += 1
+        seen_identifiers.add(identifier)
+
+        row_source_language = str(item.get("source_language", "")).strip()
+        source_text = import_text_value(item.get("source_text"))
+        instructions = import_text_value(item.get("instructions", ""))
+        if not row_source_language or not source_text:
+            raise ValueError(
+                f"Line {line_no}: expected source language and source text values"
+            )
+        if source_language is None:
+            source_language = row_source_language
+
+        raw_languages = item.get("languages", [])
+        if raw_languages is None:
+            raw_languages = []
+        if not isinstance(raw_languages, list):
+            raise ValueError(f"Line {line_no}: expected 'languages' to be a JSON array.")
+        languages = [
+            str(language).strip()
+            for language in raw_languages
+            if str(language or "").strip()
+        ]
+
+        raw_translations = item.get("translations", [])
+        if raw_translations is None:
+            raw_translations = []
+        if not isinstance(raw_translations, list):
+            raise ValueError(f"Line {line_no}: expected 'translations' to be a JSON array.")
+
+        translations = []
+        for index, translation in enumerate(raw_translations, start=1):
+            if not isinstance(translation, dict):
+                raise ValueError(
+                    f"Line {line_no}: translation {index} must be a JSON object."
+                )
+            language = str(translation.get("language", "")).strip()
+            if not language:
+                raise ValueError(
+                    f"Line {line_no}: translation {index} is missing a language value."
+                )
+
+            target_text = import_text_value(translation.get("target_text", ""))
+            status = normalize_status(translation.get("status"), target_text, "")
+            raw_warnings = translation.get("qa_warnings", [])
+            if isinstance(raw_warnings, list):
+                qa_warnings = json.dumps(raw_warnings, ensure_ascii=False)
+            elif isinstance(raw_warnings, str):
+                try:
+                    parsed_warnings = json.loads(raw_warnings)
+                except json.JSONDecodeError:
+                    parsed_warnings = []
+                qa_warnings = (
+                    json.dumps(parsed_warnings, ensure_ascii=False)
+                    if isinstance(parsed_warnings, list)
+                    else "[]"
+                )
+            else:
+                qa_warnings = "[]"
+
+            translations.append(
+                {
+                    "language": language,
+                    "target_text": target_text,
+                    "target_instructions": import_text_value(
+                        translation.get("target_instructions", "")
+                    ),
+                    "comment": import_text_value(translation.get("comment", "")),
+                    "status": status,
+                    "qa_warnings": qa_warnings,
+                    "updated_by": str(translation.get("updated_by", "")).strip(),
+                    "updated_at": str(translation.get("updated_at", "")).strip(),
+                }
+            )
+
+        if not translations:
+            fallback_language = str(
+                item.get("language")
+                or item.get("target_language")
+                or item.get("tgt_lang")
+                or ""
+            ).strip()
+            if fallback_language:
+                fallback_target_text = import_text_value(
+                    item.get("target_text")
+                    if "target_text" in item
+                    else item.get("tgt_text", "")
+                )
+                fallback_target_instructions = import_text_value(
+                    item.get("target_instructions")
+                    if "target_instructions" in item
+                    else item.get("tgt_instructions", "")
+                )
+                fallback_comment = import_text_value(item.get("comment", ""))
+                fallback_status = normalize_status(
+                    item.get("status"),
+                    fallback_target_text,
+                    "",
+                )
+                fallback_warnings = item.get("qa_warnings", [])
+                if isinstance(fallback_warnings, list):
+                    fallback_qa_warnings = json.dumps(fallback_warnings, ensure_ascii=False)
+                elif isinstance(fallback_warnings, str):
+                    try:
+                        parsed_warnings = json.loads(fallback_warnings)
+                    except json.JSONDecodeError:
+                        parsed_warnings = []
+                    fallback_qa_warnings = (
+                        json.dumps(parsed_warnings, ensure_ascii=False)
+                        if isinstance(parsed_warnings, list)
+                        else "[]"
+                    )
+                else:
+                    fallback_qa_warnings = "[]"
+                translations.append(
+                    {
+                        "language": fallback_language,
+                        "target_text": fallback_target_text,
+                        "target_instructions": fallback_target_instructions,
+                        "comment": fallback_comment,
+                        "status": fallback_status,
+                        "qa_warnings": fallback_qa_warnings,
+                        "updated_by": str(item.get("updated_by", "")).strip(),
+                        "updated_at": str(item.get("updated_at", "")).strip(),
+                    }
+                )
+                languages.append(fallback_language)
+
+        raw_source_flags = item.get("source_flags", [])
+        if raw_source_flags is None:
+            raw_source_flags = []
+        if not isinstance(raw_source_flags, list):
+            raise ValueError(f"Line {line_no}: expected 'source_flags' to be a JSON array.")
+
+        source_flags = []
+        for index, flag in enumerate(raw_source_flags, start=1):
+            if not isinstance(flag, dict):
+                raise ValueError(f"Line {line_no}: source flag {index} must be a JSON object.")
+            language = str(flag.get("language", "")).strip()
+            note = import_text_value(flag.get("note", "")).strip()
+            if not language or not note:
+                continue
+            source_flags.append(
+                {
+                    "language": language,
+                    "translator": str(flag.get("translator", "")).strip(),
+                    "note": note,
+                    "created_at": str(flag.get("created_at", "")).strip(),
+                }
+            )
+
+        for link_key, target in [
+            ("project_review_links", review_links),
+            ("review_links", review_links),
+            ("project_creator_links", creator_links),
+            ("creator_links", creator_links),
+        ]:
+            raw_links = item.get(link_key)
+            if not isinstance(raw_links, list):
+                continue
+            for link in raw_links:
+                if not isinstance(link, dict):
+                    continue
+                if target is review_links:
+                    name = str(link.get("reviewer_name", "")).strip()
+                    if not name:
+                        continue
+                    entry = {
+                        "reviewer_name": name,
+                        "created_at": str(link.get("created_at", "")).strip(),
+                    }
+                    if entry not in target:
+                        target.append(entry)
+                else:
+                    name = str(link.get("creator_name", "")).strip()
+                    if not name:
+                        continue
+                    entry = {
+                        "creator_name": name,
+                        "created_at": str(link.get("created_at", "")).strip(),
+                    }
+                    if entry not in target:
+                        target.append(entry)
+
+        metadata = {
+            key: value
+            for key, value in item.items()
+            if key not in PROJECT_EXPORT_RESERVED_KEYS
+        }
+        rows.append(
+            {
+                "identifier": identifier,
+                "source_language": row_source_language,
+                "source_text": source_text,
+                "instructions": instructions,
+                "metadata": metadata,
+                "languages": languages,
+                "translations": translations,
+                "source_flags": source_flags,
+            }
+        )
+
+    if not rows:
+        raise ValueError("The JSONL file did not contain any rows.")
+
+    return source_language, rows, review_links, creator_links
 
 
 def parse_translation_jsonl(
@@ -4544,21 +4791,104 @@ def human_eval_export_payload(conn, project, link_id=None):
     if link_id is not None:
         where.append("hel.id = ?")
         params.append(link_id)
-
     where_sql = " AND ".join(where)
-    rows = conn.execute(
+
+    model_rows = conn.execute(
+        """
+        SELECT id,
+               model_name
+        FROM human_eval_models
+        WHERE project_id = ?
+        ORDER BY id
+        """,
+        (project["id"],),
+    ).fetchall()
+    model_ids = [row["id"] for row in model_rows]
+
+    if link_id is None:
+        item_rows = conn.execute(
+            """
+            SELECT id,
+                   ordinal,
+                   source_text,
+                   reference_text
+            FROM human_eval_items
+            WHERE project_id = ?
+            ORDER BY ordinal
+            """,
+            (project["id"],),
+        ).fetchall()
+    else:
+        item_rows = conn.execute(
+            f"""
+            SELECT DISTINCT hi.id,
+                            hi.ordinal,
+                            hi.source_text,
+                            hi.reference_text
+            FROM human_eval_items hi
+            JOIN human_eval_ratings hr ON hr.item_id = hi.id
+            JOIN human_eval_links hel ON hel.id = hr.link_id
+            WHERE {where_sql}
+            ORDER BY hi.ordinal
+            """,
+            tuple(params),
+        ).fetchall()
+
+    item_ids = [row["id"] for row in item_rows]
+    outputs = {}
+    if item_ids and model_ids:
+        output_rows = conn.execute(
+            f"""
+            SELECT ho.item_id,
+                   ho.model_id,
+                   ho.output_text
+            FROM human_eval_outputs ho
+            JOIN human_eval_models hm ON hm.id = ho.model_id
+            WHERE hm.project_id = ?
+              AND ho.item_id IN ({','.join('?' for _ in item_ids)})
+            """,
+            (project["id"], *item_ids),
+        ).fetchall()
+        outputs = {
+            (int(row["item_id"]), int(row["model_id"])): str(row["output_text"] or "")
+            for row in output_rows
+        }
+
+    documents_by_item_id = {}
+    for item in item_rows:
+        models = []
+        models_by_id = {}
+        for model in model_rows:
+            entry = {
+                "model_id": model["id"],
+                "model_name": model["model_name"],
+                "output_text": outputs.get((int(item["id"]), int(model["id"])), ""),
+                "ratings": [],
+            }
+            models.append(entry)
+            models_by_id[int(model["id"])] = entry
+        document = {
+            "item_id": item["id"],
+            "ordinal": item["ordinal"],
+            "source_text": item["source_text"],
+            "reference_text": item["reference_text"],
+            "models": models,
+            "_models_by_id": models_by_id,
+        }
+        documents_by_item_id[int(item["id"])] = document
+
+    rating_rows = conn.execute(
         f"""
         SELECT hr.id AS rating_id,
                hr.created_at AS rated_at,
                hel.id AS link_id,
+               hel.token AS evaluator_token,
                hel.evaluator_name,
                hel.credit_limit,
                hi.id AS item_id,
-               hi.ordinal,
-               hi.source_text,
-               hi.reference_text,
                hm.id AS model_id,
                hm.model_name,
+               hrk.id AS ranking_id,
                hrk.rank_value,
                hrk.error_span,
                hrk.comment
@@ -4568,38 +4898,46 @@ def human_eval_export_payload(conn, project, link_id=None):
         JOIN human_eval_rankings hrk ON hrk.rating_id = hr.id
         JOIN human_eval_models hm ON hm.id = hrk.model_id
         WHERE {where_sql}
-        ORDER BY hr.id, hrk.rank_value, lower(hm.model_name)
+        ORDER BY hi.ordinal, hr.id, hrk.rank_value, lower(hm.model_name)
         """,
         tuple(params),
     ).fetchall()
 
-    grouped = {}
-    for row in rows:
-        rating_id = row["rating_id"]
-        if rating_id not in grouped:
-            grouped[rating_id] = {
-                "rating_id": rating_id,
+    link_entries = {}
+    for row in rating_rows:
+        document = documents_by_item_id.get(int(row["item_id"]))
+        if not document:
+            continue
+        model_entry = document["_models_by_id"].get(int(row["model_id"]))
+        if not model_entry:
+            continue
+        model_entry["ratings"].append(
+            {
+                "rating_id": row["rating_id"],
+                "ranking_id": row["ranking_id"],
                 "rated_at": row["rated_at"],
                 "link_id": row["link_id"],
                 "evaluator_name": row["evaluator_name"],
-                "item": {
-                    "id": row["item_id"],
-                    "ordinal": row["ordinal"],
-                    "source_text": row["source_text"],
-                    "reference_text": row["reference_text"],
-                },
-                "models": [],
-            }
-        payload = human_eval_error_span_payload(row["error_span"])
-        grouped[rating_id]["models"].append(
-            {
-                "model_id": row["model_id"],
-                "model_name": row["model_name"],
+                "credit_limit": row["credit_limit"],
                 "rank": row["rank_value"],
                 "comment": row["comment"] or "",
-                "annotations": payload,
+                "annotations": human_eval_error_span_payload(row["error_span"]),
             }
         )
+        link_entries[int(row["link_id"])] = {
+            "link_id": row["link_id"],
+            "evaluator_name": row["evaluator_name"],
+            "credit_limit": row["credit_limit"],
+            "token": row["evaluator_token"],
+        }
+
+    documents = []
+    for item in item_rows:
+        document = documents_by_item_id.get(int(item["id"]))
+        if not document:
+            continue
+        document.pop("_models_by_id", None)
+        documents.append(document)
 
     return {
         "project": {
@@ -4607,9 +4945,185 @@ def human_eval_export_payload(conn, project, link_id=None):
             "name": project["name"],
             "source_language": project["source_language"],
             "target_language": project["target_language"],
+            "evaluator_public_stats_enabled": bool_int(
+                project["evaluator_public_stats_enabled"]
+                if "evaluator_public_stats_enabled" in project.keys()
+                else 1
+            ),
+            "evaluator_auto_rank_enabled": bool_int(
+                project["evaluator_auto_rank_enabled"]
+                if "evaluator_auto_rank_enabled" in project.keys()
+                else 0
+            ),
+            "default_eval_layout": (
+                project["default_eval_layout"]
+                if "default_eval_layout" in project.keys()
+                else "table"
+            ),
         },
         "generated_at": now_iso(),
-        "ratings": list(grouped.values()),
+        "links": sorted(link_entries.values(), key=lambda item: int(item["link_id"])),
+        "documents": documents,
+    }
+
+
+def human_eval_error_span_json_from_payload(value):
+    if isinstance(value, dict):
+        source_marks = value.get("source_marks")
+        style_marks = value.get("style_marks")
+        payload = {
+            "source_marks": source_marks if isinstance(source_marks, list) else [],
+            "style_marks": style_marks if isinstance(style_marks, list) else [],
+        }
+        return json.dumps(payload, ensure_ascii=False)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ""
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return text
+        if isinstance(parsed, dict):
+            return human_eval_error_span_json_from_payload(parsed)
+        return text
+    return ""
+
+
+def parse_human_eval_annotations_export(file_storage):
+    if not file_storage or not getattr(file_storage, "filename", ""):
+        raise ValueError("Annotations JSON file is required.")
+    try:
+        raw = file_storage.stream.read().decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Annotations JSON file must be UTF-8 encoded.") from exc
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON ({exc.msg}).") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Annotations file must contain a JSON object.")
+
+    documents = payload.get("documents")
+    if not isinstance(documents, list) or not documents:
+        raise ValueError("Annotations file must contain a non-empty 'documents' array.")
+
+    project_meta = payload.get("project") if isinstance(payload.get("project"), dict) else {}
+    model_names = []
+    model_name_lookup = set()
+    parsed_documents = []
+    rating_link_seed = {}
+    rating_counter = 0
+
+    for index, document in enumerate(documents, start=1):
+        if not isinstance(document, dict):
+            raise ValueError(f"Document {index} must be a JSON object.")
+        source_text = str(document.get("source_text", ""))
+        reference_text = str(document.get("reference_text", ""))
+        models = document.get("models")
+        if not isinstance(models, list) or not models:
+            raise ValueError(f"Document {index} must include a non-empty 'models' array.")
+
+        model_outputs = {}
+        ratings_by_key = {}
+        for model_index, model in enumerate(models, start=1):
+            if not isinstance(model, dict):
+                raise ValueError(f"Document {index} model {model_index} must be a JSON object.")
+            model_name = str(model.get("model_name", "")).strip()
+            if not model_name:
+                raise ValueError(f"Document {index} model {model_index} is missing model_name.")
+            if model_name.lower() not in model_name_lookup:
+                model_names.append(model_name)
+                model_name_lookup.add(model_name.lower())
+
+            model_outputs[model_name] = str(model.get("output_text", ""))
+            ratings = model.get("ratings")
+            if ratings is None:
+                ratings = []
+            if not isinstance(ratings, list):
+                raise ValueError(
+                    f"Document {index} model '{model_name}' has invalid 'ratings' value."
+                )
+            for rating in ratings:
+                if not isinstance(rating, dict):
+                    continue
+                rating_counter += 1
+                raw_rating_id = str(rating.get("rating_id", "")).strip()
+                key = raw_rating_id or f"doc{index}-r{rating_counter}"
+                rank = int_or_none(rating.get("rank"))
+                if rank is None or rank < 1:
+                    continue
+                entry = ratings_by_key.setdefault(
+                    key,
+                    {
+                        "rated_at": str(rating.get("rated_at", "")).strip(),
+                        "link_id": str(rating.get("link_id", "")).strip(),
+                        "evaluator_name": str(rating.get("evaluator_name", "")).strip(),
+                        "credit_limit": int_or_none(rating.get("credit_limit")),
+                        "per_model": {},
+                    },
+                )
+                entry["per_model"][model_name] = {
+                    "rank": rank,
+                    "comment": str(rating.get("comment", "")),
+                    "annotations": rating.get("annotations"),
+                }
+                link_key = entry["link_id"] or f"evaluator:{entry['evaluator_name'].lower()}"
+                if link_key not in rating_link_seed:
+                    rating_link_seed[link_key] = {
+                        "link_id": entry["link_id"],
+                        "evaluator_name": entry["evaluator_name"],
+                        "credit_limit": entry["credit_limit"],
+                    }
+
+        parsed_documents.append(
+            {
+                "ordinal": int_or_none(document.get("ordinal")) or index,
+                "source_text": source_text,
+                "reference_text": reference_text,
+                "model_outputs": model_outputs,
+                "ratings": list(ratings_by_key.values()),
+            }
+        )
+
+    if len(model_names) < 2:
+        raise ValueError("Annotations file must include at least two models.")
+
+    links = payload.get("links")
+    if isinstance(links, list) and links:
+        parsed_links = []
+        for row in links:
+            if not isinstance(row, dict):
+                continue
+            parsed_links.append(
+                {
+                    "link_id": str(row.get("link_id", "")).strip(),
+                    "evaluator_name": str(row.get("evaluator_name", "")).strip(),
+                    "credit_limit": int_or_none(row.get("credit_limit")),
+                }
+            )
+        if parsed_links:
+            link_seed_values = parsed_links
+        else:
+            link_seed_values = list(rating_link_seed.values())
+    else:
+        link_seed_values = list(rating_link_seed.values())
+
+    source_language = str(project_meta.get("source_language", "")).strip() or "Source"
+    target_language = str(project_meta.get("target_language", "")).strip() or "Target"
+    default_eval_layout = str(project_meta.get("default_eval_layout", "table")).strip().lower()
+    if default_eval_layout not in {"table", "document", "dynamic"}:
+        default_eval_layout = "table"
+
+    return {
+        "source_language": source_language,
+        "target_language": target_language,
+        "evaluator_public_stats_enabled": bool_int(project_meta.get("evaluator_public_stats_enabled", 1)),
+        "evaluator_auto_rank_enabled": bool_int(project_meta.get("evaluator_auto_rank_enabled", 0)),
+        "default_eval_layout": default_eval_layout,
+        "model_names": dedupe_model_names(model_names),
+        "documents": sorted(parsed_documents, key=lambda row: int(row["ordinal"])),
+        "links": link_seed_values,
     }
 
 
@@ -6909,6 +7423,229 @@ def dashboard():
     return render_template("dashboard.html", user=user, projects=projects)
 
 
+@app.post("/dashboard/import-project-export")
+def import_project_export():
+    user = require_login()
+    if not is_db_row(user):
+        return user
+
+    name = request.form.get("name", "").strip()
+    upload = request.files.get("jsonl")
+    if not name or not upload or not upload.filename:
+        flash("Project name and JSONL file are required.")
+        return redirect(url_for("dashboard"))
+
+    try:
+        source_language, rows, review_links, creator_links = parse_project_export_jsonl(upload)
+    except ValueError as exc:
+        flash(str(exc))
+        return redirect(url_for("dashboard"))
+
+    upload.stream.seek(0)
+    filename = secure_filename(upload.filename)
+    upload.save(UPLOAD_DIR / f"{datetime.now().timestamp()}-project-export-{filename}")
+
+    with db() as conn:
+        project_id = insert_and_get_id(
+            conn,
+            """
+            INSERT INTO projects
+                (
+                    owner_id,
+                    name,
+                    source_language,
+                    source_editable,
+                    import_format_id,
+                    import_mapping,
+                    created_at
+                )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user["id"],
+                name,
+                source_language,
+                1,
+                None,
+                "{}",
+                now_iso(),
+            ),
+        )
+
+        project_languages = set()
+        for ordinal, row in enumerate(rows, start=1):
+            segment_id = insert_and_get_id(
+                conn,
+                """
+                INSERT INTO segments
+                    (
+                        project_id,
+                        identifier,
+                        ordinal,
+                        source_language,
+                        source_text,
+                        instructions,
+                        metadata,
+                        created_at
+                    )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    row["identifier"],
+                    ordinal,
+                    row["source_language"],
+                    row["source_text"],
+                    row["instructions"],
+                    json.dumps(row["metadata"], ensure_ascii=False),
+                    now_iso(),
+                ),
+            )
+
+            for language in row["languages"]:
+                project_languages.add(language)
+
+            for translation in row["translations"]:
+                language = translation["language"]
+                project_languages.add(language)
+                translation_updated_at = translation["updated_at"] or now_iso()
+                target_text = translation["target_text"]
+                status = normalize_status(translation["status"], target_text, "")
+                updated_by = translation["updated_by"] or user["username"]
+                draft_text = ""
+                draft_instructions = ""
+                draft_comment = ""
+                draft_updated_by = None
+                draft_updated_at = None
+                target_instructions = translation["target_instructions"]
+                comment = translation["comment"]
+
+                if status == "draft":
+                    draft_text = target_text
+                    draft_instructions = target_instructions
+                    draft_comment = comment
+                    target_text = ""
+                    target_instructions = ""
+                    comment = ""
+                    updated_by = None
+                    draft_updated_by = translation["updated_by"] or user["username"]
+                    draft_updated_at = translation_updated_at
+
+                conn.execute(
+                    """
+                    INSERT INTO translations
+                        (
+                            segment_id,
+                            target_language,
+                            target_text,
+                            draft_text,
+                            target_instructions,
+                            draft_instructions,
+                            comment,
+                            draft_comment,
+                            status,
+                            qa_warnings,
+                            version,
+                            updated_by,
+                            draft_updated_by,
+                            updated_at,
+                            draft_updated_at
+                        )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        segment_id,
+                        language,
+                        target_text,
+                        draft_text,
+                        target_instructions,
+                        draft_instructions,
+                        comment,
+                        draft_comment,
+                        status,
+                        translation["qa_warnings"],
+                        1 if status in {"submitted", "needs_revision", "approved"} else 0,
+                        updated_by,
+                        draft_updated_by,
+                        translation_updated_at,
+                        draft_updated_at,
+                    ),
+                )
+
+            for flag in row["source_flags"]:
+                conn.execute(
+                    """
+                    INSERT INTO source_flags
+                        (
+                            segment_id,
+                            target_language,
+                            translator_name,
+                            note,
+                            created_at
+                        )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        segment_id,
+                        flag["language"],
+                        flag["translator"] or "imported",
+                        flag["note"],
+                        flag["created_at"] or now_iso(),
+                    ),
+                )
+
+        for language in sorted(project_languages, key=str.lower):
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO project_languages
+                    (project_id, target_language, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (project_id, language, now_iso()),
+            )
+
+        for link in review_links:
+            reviewer_name = str(link.get("reviewer_name", "")).strip()
+            if not reviewer_name:
+                continue
+            conn.execute(
+                """
+                INSERT INTO review_links
+                    (project_id, token, reviewer_name, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    secrets.token_urlsafe(24),
+                    reviewer_name[:80],
+                    link.get("created_at") or now_iso(),
+                ),
+            )
+
+        for link in creator_links:
+            creator_name = str(link.get("creator_name", "")).strip()
+            if not creator_name:
+                continue
+            conn.execute(
+                """
+                INSERT INTO creator_links
+                    (project_id, token, creator_name, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    secrets.token_urlsafe(24),
+                    creator_name[:80],
+                    link.get("created_at") or now_iso(),
+                ),
+            )
+
+        conn.commit()
+
+    flash("Project imported from exported JSONL.")
+    return redirect(url_for("project_detail", project_id=project_id))
+
+
 @app.route("/languages", methods=["GET", "POST"])
 def languages_management():
     user = require_login()
@@ -7053,6 +7790,210 @@ def human_evaluation_dashboard():
         ).fetchall()
 
     return render_template("human_eval_dashboard.html", user=user, projects=projects)
+
+
+@app.post("/human-evaluation/import-annotations")
+def human_evaluation_import_annotations():
+    user = require_login()
+    if not is_db_row(user):
+        return user
+
+    name = request.form.get("name", "").strip()
+    upload = request.files.get("annotations_json")
+    if not name or not upload or not upload.filename:
+        flash("Project name and annotations JSON file are required.")
+        return redirect(url_for("human_evaluation_dashboard"))
+
+    try:
+        payload = parse_human_eval_annotations_export(upload)
+    except ValueError as exc:
+        flash(str(exc))
+        return redirect(url_for("human_evaluation_dashboard"))
+
+    upload.stream.seek(0)
+    filename = secure_filename(upload.filename)
+    upload.save(UPLOAD_DIR / f"{datetime.now().timestamp()}-human-eval-import-{filename}")
+
+    model_names = payload["model_names"]
+    documents = payload["documents"]
+    created_links = {}
+    link_seed_by_id = {
+        str(item.get("link_id", "")).strip(): item
+        for item in payload["links"]
+        if str(item.get("link_id", "")).strip()
+    }
+
+    with db() as conn:
+        stamp = now_iso()
+        project_id = insert_and_get_id(
+            conn,
+            """
+            INSERT INTO human_eval_projects
+                (
+                    owner_id,
+                    name,
+                    source_language,
+                    target_language,
+                    evaluator_public_stats_enabled,
+                    evaluator_auto_rank_enabled,
+                    default_eval_layout,
+                    created_at
+                )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user["id"],
+                name,
+                payload["source_language"],
+                payload["target_language"],
+                payload["evaluator_public_stats_enabled"],
+                payload["evaluator_auto_rank_enabled"],
+                payload["default_eval_layout"],
+                stamp,
+            ),
+        )
+
+        model_id_by_name = {}
+        for model_name in model_names:
+            model_id_by_name[model_name] = insert_and_get_id(
+                conn,
+                """
+                INSERT INTO human_eval_models (project_id, model_name, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (project_id, model_name, stamp),
+            )
+
+        next_fallback_link_key = 0
+
+        def ensure_link_id(external_link_id, evaluator_name, credit_limit):
+            nonlocal next_fallback_link_key
+            key = str(external_link_id or "").strip()
+            if not key:
+                key = f"generated-{next_fallback_link_key}"
+                next_fallback_link_key += 1
+            if key in created_links:
+                return created_links[key]
+
+            seed = link_seed_by_id.get(str(external_link_id or "").strip())
+            effective_name = (
+                str((seed or {}).get("evaluator_name", "")).strip()
+                or str(evaluator_name or "").strip()
+                or "imported"
+            )
+            seed_credit_limit = int_or_none((seed or {}).get("credit_limit"))
+            effective_credit_limit = (
+                seed_credit_limit
+                if seed_credit_limit is not None and seed_credit_limit >= 1
+                else int_or_none(credit_limit)
+            )
+            if effective_credit_limit is None or effective_credit_limit < 1:
+                effective_credit_limit = max(len(documents), 1)
+
+            link_id = insert_and_get_id(
+                conn,
+                """
+                INSERT INTO human_eval_links
+                    (project_id, token, evaluator_name, credit_limit, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    secrets.token_urlsafe(24),
+                    effective_name,
+                    effective_credit_limit,
+                    stamp,
+                ),
+            )
+            created_links[key] = link_id
+            return link_id
+
+        for document_index, document in enumerate(documents, start=1):
+            item_id = insert_and_get_id(
+                conn,
+                """
+                INSERT INTO human_eval_items
+                    (project_id, ordinal, source_text, reference_text, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    document_index,
+                    document["source_text"],
+                    document["reference_text"],
+                    stamp,
+                ),
+            )
+
+            for model_name in model_names:
+                conn.execute(
+                    """
+                    INSERT INTO human_eval_outputs
+                        (item_id, model_id, output_text, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        item_id,
+                        model_id_by_name[model_name],
+                        document["model_outputs"].get(model_name, ""),
+                        stamp,
+                    ),
+                )
+
+            for rating in document["ratings"]:
+                link_id = ensure_link_id(
+                    rating.get("link_id"),
+                    rating.get("evaluator_name"),
+                    rating.get("credit_limit"),
+                )
+                rated_at = str(rating.get("rated_at", "")).strip() or stamp
+                rating_id = insert_and_get_id(
+                    conn,
+                    """
+                    INSERT INTO human_eval_ratings (link_id, item_id, created_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (link_id, item_id, rated_at),
+                )
+
+                ranking_count = 0
+                for model_name in model_names:
+                    ranking = rating["per_model"].get(model_name)
+                    if not ranking:
+                        continue
+                    rank_value = int_or_none(ranking.get("rank"))
+                    if rank_value is None or rank_value < 1:
+                        continue
+                    ranking_count += 1
+                    conn.execute(
+                        """
+                        INSERT INTO human_eval_rankings
+                            (rating_id, model_id, rank_value, error_span, comment)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            rating_id,
+                            model_id_by_name[model_name],
+                            rank_value,
+                            human_eval_error_span_json_from_payload(
+                                ranking.get("annotations")
+                            )[:HUMAN_EVAL_ERROR_SPAN_MAX_CHARS],
+                            str(ranking.get("comment", ""))[:2000],
+                        ),
+                    )
+
+                if ranking_count == 0:
+                    conn.execute(
+                        "DELETE FROM human_eval_ratings WHERE id = ?",
+                        (rating_id,),
+                    )
+
+        conn.commit()
+
+    flash(
+        f"Human evaluation project imported with {len(documents)} items and {len(model_names)} models."
+    )
+    return redirect(url_for("human_evaluation_project_detail", eval_project_id=project_id))
 
 
 @app.route("/human-evaluation/new", methods=["GET", "POST"])
@@ -12227,6 +13168,8 @@ def creator_source_review(token):
 
 @app.route("/r/<token>", methods=["GET", "POST"])
 def review_project(token):
+    return review_project_texts(token)
+
     try:
         page = int(request.values.get("page", "1"))
     except ValueError:
@@ -14742,9 +15685,41 @@ def export_project(project_id, target_language):
         source_flags = grouped_source_flags(
             conn, [row["segment_id"] for row in rows], [target_language]
         )
+        review_links_export = [
+            {
+                "reviewer_name": row["reviewer_name"],
+                "created_at": row["created_at"],
+            }
+            for row in conn.execute(
+                """
+                SELECT reviewer_name,
+                       created_at
+                FROM review_links
+                WHERE project_id = ?
+                ORDER BY created_at, id
+                """,
+                (project_id,),
+            ).fetchall()
+        ]
+        creator_links_export = [
+            {
+                "creator_name": row["creator_name"],
+                "created_at": row["created_at"],
+            }
+            for row in conn.execute(
+                """
+                SELECT creator_name,
+                       created_at
+                FROM creator_links
+                WHERE project_id = ?
+                ORDER BY created_at, id
+                """,
+                (project_id,),
+            ).fetchall()
+        ]
 
     export_rows = []
-    for row in rows:
+    for index, row in enumerate(rows):
         row_dict = dict(row)
         segment_id = row_dict.pop("segment_id")
         metadata = metadata_dict(row_dict.pop("metadata", "{}"))
@@ -14752,6 +15727,9 @@ def export_project(project_id, target_language):
         flags = source_flags.get(segment_id, [])
         metadata["source_flags"] = flags
         metadata["source_flag_count"] = len(flags)
+        if index == 0:
+            metadata["project_review_links"] = review_links_export
+            metadata["project_creator_links"] = creator_links_export
         export_rows.append(metadata)
 
     lines = "\n".join(json.dumps(row, ensure_ascii=False) for row in export_rows) + "\n"
@@ -14891,8 +15869,41 @@ def export_project_jsonl_multi(project_id):
             for row in rows:
                 translations_by_segment[row["segment_id"]][language] = dict(row)
 
+        review_links_export = [
+            {
+                "reviewer_name": row["reviewer_name"],
+                "created_at": row["created_at"],
+            }
+            for row in conn.execute(
+                """
+                SELECT reviewer_name,
+                       created_at
+                FROM review_links
+                WHERE project_id = ?
+                ORDER BY created_at, id
+                """,
+                (project_id,),
+            ).fetchall()
+        ]
+        creator_links_export = [
+            {
+                "creator_name": row["creator_name"],
+                "created_at": row["created_at"],
+            }
+            for row in conn.execute(
+                """
+                SELECT creator_name,
+                       created_at
+                FROM creator_links
+                WHERE project_id = ?
+                ORDER BY created_at, id
+                """,
+                (project_id,),
+            ).fetchall()
+        ]
+
     export_rows = []
-    for segment in segments:
+    for index, segment in enumerate(segments):
         segment_id = segment["id"]
         if format_config and len(selected_languages) == 1:
             export_rows.append(
@@ -14937,6 +15948,9 @@ def export_project_jsonl_multi(project_id):
                     "source_flag_count": len(language_flags),
                 }
             )
+        if index == 0:
+            item["project_review_links"] = review_links_export
+            item["project_creator_links"] = creator_links_export
         export_rows.append(item)
 
     if format_config and len(selected_languages) == 1:
@@ -14944,6 +15958,166 @@ def export_project_jsonl_multi(project_id):
 
     lines = "\n".join(json.dumps(row, ensure_ascii=False) for row in export_rows) + "\n"
     filename = secure_filename(f"project-{project_id}-selected-languages.jsonl")
+    return app.response_class(
+        lines,
+        mimetype="application/x-ndjson",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.post("/projects/<int:project_id>/export-project-jsonl")
+def export_project_jsonl_for_import(project_id):
+    user = require_login()
+    if not is_db_row(user):
+        return user
+
+    project = project_for_user(project_id, user["id"])
+    selected_languages = [
+        value.strip() for value in request.form.getlist("languages") if value.strip()
+    ]
+    if not selected_languages:
+        flash("Select at least one language to export.")
+        return redirect(url_for("project_detail", project_id=project_id))
+
+    with db() as conn:
+        allowed_languages = [
+            row["target_language"]
+            for row in conn.execute(
+                "SELECT target_language FROM project_languages WHERE project_id = ?",
+                (project_id,),
+            ).fetchall()
+        ]
+        allowed_lookup = {language.lower(): language for language in allowed_languages}
+        selected_languages = [
+            allowed_lookup[language.lower()]
+            for language in selected_languages
+            if language.lower() in allowed_lookup
+        ]
+        if not selected_languages:
+            flash("No valid languages were selected.")
+            return redirect(url_for("project_detail", project_id=project_id))
+
+        segments = conn.execute(
+            """
+            SELECT id,
+                   identifier,
+                   source_language,
+                   source_text,
+                   instructions,
+                   metadata
+            FROM segments
+            WHERE project_id = ?
+            ORDER BY ordinal
+            """,
+            (project_id,),
+        ).fetchall()
+        segment_ids = [row["id"] for row in segments]
+        source_flags = grouped_source_flags(conn, segment_ids, selected_languages)
+
+        translations_by_segment = {segment_id: {} for segment_id in segment_ids}
+        for language in selected_languages:
+            rows = conn.execute(
+                """
+                SELECT s.id AS segment_id,
+                       COALESCE(t.target_text, '') AS target_text,
+                       COALESCE(t.target_instructions, '') AS target_instructions,
+                       COALESCE(t.comment, '') AS comment,
+                       COALESCE(t.status, 'untranslated') AS status,
+                       COALESCE(t.qa_warnings, '[]') AS qa_warnings,
+                       t.updated_by,
+                       t.updated_at
+                FROM segments s
+                LEFT JOIN translations t
+                  ON t.segment_id = s.id
+                 AND lower(t.target_language) = lower(?)
+                WHERE s.project_id = ?
+                ORDER BY s.ordinal
+                """,
+                (language, project_id),
+            ).fetchall()
+            for row in rows:
+                translations_by_segment[row["segment_id"]][language] = dict(row)
+
+        review_links_export = [
+            {
+                "reviewer_name": row["reviewer_name"],
+                "created_at": row["created_at"],
+            }
+            for row in conn.execute(
+                """
+                SELECT reviewer_name,
+                       created_at
+                FROM review_links
+                WHERE project_id = ?
+                ORDER BY created_at, id
+                """,
+                (project_id,),
+            ).fetchall()
+        ]
+        creator_links_export = [
+            {
+                "creator_name": row["creator_name"],
+                "created_at": row["created_at"],
+            }
+            for row in conn.execute(
+                """
+                SELECT creator_name,
+                       created_at
+                FROM creator_links
+                WHERE project_id = ?
+                ORDER BY created_at, id
+                """,
+                (project_id,),
+            ).fetchall()
+        ]
+
+    export_rows = []
+    for index, segment in enumerate(segments):
+        segment_id = segment["id"]
+        item = metadata_dict(segment["metadata"])
+        flags = source_flags.get(segment_id, [])
+        item.update(
+            {
+                "identifier": segment["identifier"],
+                "source_language": segment["source_language"],
+                "source_text": segment["source_text"],
+                "instructions": segment["instructions"],
+                "languages": selected_languages,
+                "source_flags": flags,
+                "source_flag_count": len(flags),
+                "translations": [],
+            }
+        )
+        for language in selected_languages:
+            translation = translations_by_segment.get(segment_id, {}).get(language, {})
+            language_flags = [
+                flag for flag in flags if flag["language"].lower() == language.lower()
+            ]
+            item["translations"].append(
+                {
+                    "language": language,
+                    "target_text": translation.get("target_text", ""),
+                    "target_instructions": translation.get("target_instructions", ""),
+                    "comment": translation.get("comment", ""),
+                    "status": translation.get("status", "untranslated"),
+                    "qa_warnings": json_list(translation.get("qa_warnings", "[]")),
+                    "updated_by": translation.get("updated_by"),
+                    "updated_at": translation.get("updated_at"),
+                    "source_flags": language_flags,
+                    "source_flag_count": len(language_flags),
+                }
+            )
+        if index == 0:
+            item["project_review_links"] = review_links_export
+            item["project_creator_links"] = creator_links_export
+        export_rows.append(item)
+
+    lines = "\n".join(json.dumps(row, ensure_ascii=False) for row in export_rows) + "\n"
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = safe_download_name(
+        f"{project['name']}-{timestamp}.jsonl",
+        f"project-{project_id}-{timestamp}.jsonl",
+    )
     return app.response_class(
         lines,
         mimetype="application/x-ndjson",

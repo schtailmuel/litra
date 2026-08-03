@@ -30,4 +30,46 @@
       <p>Upload a JSONL file to create your first translation project.</p>
     </div>
   {% endif %}
+
+  <section class="project-import-shell project-import-shell-full section-gap dashboard-import-shell">
+    <form
+      method="post"
+      action="{{ url_for('import_project_export') }}"
+      enctype="multipart/form-data"
+      class="form-panel project-import-form dashboard-import-form"
+    >
+      <div class="import-step">
+        <h2>Import Exported Project</h2>
+        <p class="muted">Create a full project from an exported JSONL file, including translations and links.</p>
+      </div>
+      <fieldset class="import-fieldset">
+        <label>
+          New project name
+          <input name="name" required placeholder="Imported project">
+        </label>
+        <label>
+          Exported JSONL file
+          <input
+            name="jsonl"
+            type="file"
+            required
+            accept=".jsonl,application/x-ndjson,application/jsonl,text/plain"
+          >
+        </label>
+      </fieldset>
+      <button type="submit">Import Project JSONL</button>
+    </form>
+  </section>
+
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Import Formats</h2>
+        <p class="muted">Manage reusable JSON/JSONL mapping profiles used during project import.</p>
+      </div>
+      <div class="page-actions">
+        <a class="button secondary" href="{{ url_for('import_formats') }}">Open Import Formats</a>
+      </div>
+    </div>
+  </section>
 {% endblock %}

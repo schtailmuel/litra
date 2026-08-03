@@ -1,89 +1,95 @@
 {% extends "base.html" %}
 {% block main_class %}page page-wide{% endblock %}
 {% block content %}
-  <div class="page-head">
-    <div>
-      <h1>Fast Review</h1>
-      <p>{{ link.project_name }} &middot; {{ text_count }} rows &middot; {{ reviewer }}</p>
-    </div>
-    <div class="page-actions">
-      <a class="button secondary" href="{{ url_for('review_project', token=link.token) }}">Overview Review</a>
-      <a class="button secondary" href="{{ url_for('review_project_texts_download', token=link.token, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Download JSONL</a>
-      {% if page > 1 %}
-        <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, page=page - 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Previous</a>
-      {% endif %}
-      {% if page * per_page < text_count %}
-        <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, page=page + 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Next</a>
-      {% endif %}
-    </div>
-  </div>
+  <div class="fast-review-layout">
+    <details class="form-panel collapsible-panel fast-review-sidebar" open>
+      <summary>
+        <span>
+          <strong>Filters</strong>
+          <small>Refine the current text list</small>
+        </span>
+      </summary>
+      <div class="fast-review-sidebar-head">
+        <h2>Fast Review</h2>
+        <p class="muted">{{ link.project_name }} &middot; {{ text_count }} rows &middot; {{ reviewer }}</p>
+      </div>
+      <form method="get" class="filter-panel compact-filter-panel">
+        <label>
+          Search
+          <input name="q" value="{{ filters.q }}" placeholder="ID, source, translation, comment">
+        </label>
+        <label>
+          Language
+          <select name="language">
+            <option value="">All languages</option>
+            {% for language in languages %}
+              <option value="{{ language }}" {% if filters.language|lower == language|lower %}selected{% endif %}>{{ language }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Status
+          <select name="status">
+            <option value="">Any status</option>
+            {% for status in TRANSLATION_STATUSES %}
+              <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ 'reviewed' if status == 'approved' else status.replace("_", " ") }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="missing" value="1" {% if filters.missing %}checked{% endif %}>
+          Missing
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="comments" value="1" {% if filters.comments %}checked{% endif %}>
+          Comments
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="warnings" value="1" {% if filters.warnings %}checked{% endif %}>
+          QA
+        </label>
+        <label>
+          QA Type
+          <select name="warning_code">
+            <option value="">Any QA warning</option>
+            {% for warning_code, warning_label in QA_WARNING_CODE_OPTIONS %}
+              <option value="{{ warning_code }}" {% if filters.warning_code == warning_code %}selected{% endif %}>{{ warning_label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="filter-actions">
+          <button type="submit">Filter</button>
+          <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token) }}">Clear</a>
+        </div>
+      </form>
 
-  <section class="form-panel">
-    <form method="get" class="filter-panel compact-filter-panel">
-      <label>
-        Search
-        <input name="q" value="{{ filters.q }}" placeholder="ID, source, translation, comment">
-      </label>
-      <label>
-        Language
-        <select name="language">
-          <option value="">All languages</option>
-          {% for language in languages %}
-            <option value="{{ language }}" {% if filters.language|lower == language|lower %}selected{% endif %}>{{ language }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Status
-        <select name="status">
-          <option value="">Any status</option>
-          {% for status in TRANSLATION_STATUSES %}
-            <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ 'reviewed' if status == 'approved' else status.replace("_", " ") }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="checkbox-label">
-        <input type="checkbox" name="missing" value="1" {% if filters.missing %}checked{% endif %}>
-        Missing
-      </label>
-      <label class="checkbox-label">
-        <input type="checkbox" name="comments" value="1" {% if filters.comments %}checked{% endif %}>
-        Comments
-      </label>
-      <label class="checkbox-label">
-        <input type="checkbox" name="warnings" value="1" {% if filters.warnings %}checked{% endif %}>
-        QA
-      </label>
-      <label>
-        QA Type
-        <select name="warning_code">
-          <option value="">Any QA warning</option>
-          {% for warning_code, warning_label in QA_WARNING_CODE_OPTIONS %}
-            <option value="{{ warning_code }}" {% if filters.warning_code == warning_code %}selected{% endif %}>{{ warning_label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <div class="filter-actions">
-        <button type="submit">Filter</button>
-        <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token) }}">Clear</a>
+      <div class="fast-review-sidebar-actions">
         <a class="button secondary" href="{{ url_for('review_project_texts_download', token=link.token, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Download JSONL</a>
       </div>
-    </form>
 
-    <div class="overview-grid reviewer-overview">
-      <div><strong>{{ overview.total_slots }}</strong><span>slots</span></div>
-      <div><strong>{{ overview.translated }}</strong><span>translated</span></div>
-      <div><strong>{{ overview.submitted }}</strong><span>submitted</span></div>
-      <div><strong>{{ overview.needs_revision }}</strong><span>needs revision</span></div>
-      <div><strong>{{ overview.reviewed }}</strong><span>reviewed</span></div>
-      <div><strong>{{ overview.warnings }}</strong><span>QA warnings</span></div>
-      <div><strong>{{ overview.comments }}</strong><span>comments</span></div>
-    </div>
-  </section>
+      <div class="overview-grid reviewer-overview">
+        <div><strong>{{ overview.total_slots }}</strong><span>slots</span></div>
+        <div><strong>{{ overview.translated }}</strong><span>translated</span></div>
+        <div><strong>{{ overview.submitted }}</strong><span>submitted</span></div>
+        <div><strong>{{ overview.needs_revision }}</strong><span>needs revision</span></div>
+        <div><strong>{{ overview.reviewed }}</strong><span>reviewed</span></div>
+        <div><strong>{{ overview.warnings }}</strong><span>QA warnings</span></div>
+        <div><strong>{{ overview.comments }}</strong><span>comments</span></div>
+      </div>
+    </details>
 
-  <section class="form-panel section-gap">
+    <section class="form-panel fast-review-main">
     <div class="page-head compact-head">
-      <h2>Texts</h2>
+      <div>
+        <h2>Texts</h2>
+        <p class="muted">
+          {% if text_rows %}
+            Showing {{ (page - 1) * per_page + 1 }}–{{ (page - 1) * per_page + (text_rows|length) }} of {{ text_count }}
+          {% else %}
+            Showing 0 of {{ text_count }}
+          {% endif %}
+        </p>
+      </div>
       <div class="pagination">
         {% if page > 1 %}
           <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, page=page - 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Previous</a>
@@ -226,6 +232,15 @@
         </div>
       {% endfor %}
     </div>
-  </section>
+    <div class="pagination">
+      {% if page > 1 %}
+        <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, page=page - 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Previous</a>
+      {% endif %}
+      {% if page * per_page < text_count %}
+        <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, page=page + 1, q=filters.q, language=filters.language, status=filters.status, missing=filters.missing, comments=filters.comments, warnings=filters.warnings, warning_code=filters.warning_code) }}">Next</a>
+      {% endif %}
+    </div>
+    </section>
+  </div>
   <script src="{{ url_for('static', filename='review_texts.js') }}?v={{ STATIC_VERSION }}"></script>
 {% endblock %}

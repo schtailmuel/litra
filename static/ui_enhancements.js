@@ -26,7 +26,7 @@
   }
 
   function applyIcons() {
-    const candidates = document.querySelectorAll("a.button, button, .topbar nav a");
+    const candidates = document.querySelectorAll("a.button, button");
     for (const node of candidates) {
       if (node.hasAttribute("data-icon")) {
         continue;

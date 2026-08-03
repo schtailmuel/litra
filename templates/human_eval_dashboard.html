@@ -5,7 +5,6 @@
       <h1>Human Evaluation</h1>
       <p>{{ user.username }}</p>
     </div>
-    <a class="button" href="{{ url_for('human_evaluation_new_project') }}">New Evaluation Project</a>
   </div>
 
   <section class="form-panel section-gap">
@@ -16,6 +15,19 @@
       <li>Evaluators rank blind translations, mark source/target error spans, and add optional comments.</li>
       <li>Use the project page for live stats, comments, annotation management, and JSON export downloads.</li>
     </ol>
+  </section>
+
+  <section class="form-panel section-gap dashboard-action-strip">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Actions</h2>
+        <p class="muted">Start a new evaluation project or import an existing annotation export.</p>
+      </div>
+      <div class="page-actions">
+        <a class="button" href="{{ url_for('human_evaluation_new_project') }}">New Evaluation Project</a>
+        <a class="button secondary" href="#annotation-import">Jump to Import</a>
+      </div>
+    </div>
   </section>
 
   {% if projects %}
@@ -38,4 +50,29 @@
       <p>Create one project, upload TXT files, and start collecting blind rankings.</p>
     </div>
   {% endif %}
+
+  <section id="annotation-import" class="project-import-shell project-import-shell-full section-gap dashboard-import-shell">
+    <form
+      method="post"
+      action="{{ url_for('human_evaluation_import_annotations') }}"
+      enctype="multipart/form-data"
+      class="form-panel project-import-form dashboard-import-form"
+    >
+      <div class="import-step">
+        <h2>Import Annotation Export</h2>
+        <p class="muted">Create a full human-evaluation project from exported annotations JSON.</p>
+      </div>
+      <fieldset class="import-fieldset">
+        <label>
+          New project name
+          <input name="name" required placeholder="Imported evaluation">
+        </label>
+        <label>
+          Annotation export JSON
+          <input name="annotations_json" type="file" required accept=".json,application/json,text/plain">
+        </label>
+      </fieldset>
+      <button type="submit">Import Evaluation Project</button>
+    </form>
+  </section>
 {% endblock %}

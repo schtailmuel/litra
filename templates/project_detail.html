@@ -428,8 +428,7 @@
                 Access URL
                 <input readonly value="{{ review_url }}" onfocus="this.select()">
               </label>
-              <a class="button secondary" href="{{ review_url }}">Open Review</a>
-              <a class="button secondary" href="{{ url_for('review_project_texts', token=link.token, _external=True) }}">Open Fast List</a>
+              <a class="button secondary" href="{{ review_url }}">Open Fast List</a>
             </div>
           {% endfor %}
         </div>
@@ -481,6 +480,28 @@
       </div>
     {% else %}
       <p class="muted">No additional users have access yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Project Export</h2>
+        <p class="muted">Exports selected languages in import-ready JSONL format.</p>
+      </div>
+    </div>
+    {% if language_rows %}
+      <button
+        form="languageExportForm"
+        type="submit"
+        class="secondary"
+        formaction="{{ url_for('export_project_jsonl_for_import', project_id=project.id) }}"
+        formmethod="post"
+      >
+        Export Project JSONL
+      </button>
+    {% else %}
+      <p class="muted">Add at least one target language to export a project file.</p>
     {% endif %}
   </section>
 

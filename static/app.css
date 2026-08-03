@@ -1131,6 +1131,40 @@ label select {
   gap: 1rem;
 }
 
+.dashboard-import-shell {
+  width: 100%;
+}
+
+.dashboard-import-form {
+  width: 100%;
+  gap: 1.1rem;
+}
+
+.dashboard-import-form .import-step {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.dashboard-import-form .import-fieldset {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+}
+
+.dashboard-import-form button {
+  justify-self: start;
+}
+
+.dashboard-action-strip {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.dashboard-action-strip .page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .import-step {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -2205,6 +2239,71 @@ button.danger-text-button:hover {
   gap: 0.4rem;
 }
 
+.fast-review-layout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.fast-review-sidebar {
+  width: min(22rem, 92vw);
+  position: sticky;
+  top: 5rem;
+  max-height: calc(100dvh - 6rem);
+  overflow: auto;
+}
+
+.fast-review-sidebar:not([open]) {
+  width: 3.1rem;
+}
+
+.fast-review-sidebar:not([open]) summary span {
+  display: none;
+}
+
+.fast-review-sidebar:not([open]) summary {
+  justify-content: center;
+}
+
+.fast-review-sidebar-head {
+  display: grid;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.fast-review-sidebar-head h2,
+.fast-review-sidebar-head p {
+  margin: 0;
+}
+
+.fast-review-sidebar .filter-panel {
+  grid-template-columns: 1fr;
+  margin-bottom: 0.75rem;
+}
+
+.fast-review-sidebar .filter-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fast-review-sidebar .reviewer-overview {
+  grid-template-columns: 1fr;
+  width: 100%;
+}
+
+.fast-review-sidebar-actions {
+  margin-top: 0.75rem;
+}
+
+.fast-review-sidebar-actions .button {
+  width: 100%;
+}
+
+.fast-review-main {
+  margin-top: 0;
+}
+
 .fast-review-head,
 .fast-review-row {
   display: grid;
@@ -3255,11 +3354,27 @@ button.danger-text-button:hover {
   .link-row,
   .review-link-row,
   .reviewer-overview,
+  .fast-review-layout,
   .fast-review-head,
   .fast-review-row,
   .translator-shell,
   .project-import-shell-full .schema-inspector,
   .conflict-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-import-form .import-fieldset {
+    grid-template-columns: 1fr;
+  }
+
+  .fast-review-sidebar {
+    position: static;
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .fast-review-sidebar .filter-actions {
     grid-template-columns: 1fr;
   }
 

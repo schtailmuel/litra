@@ -15,9 +15,8 @@
     <nav>
       {% if session.get("user_id") %}
       <a href="{{ url_for('dashboard') }}">Translate</a>
-      <a href="{{ url_for('human_evaluation_dashboard') }}">Human Evaluation</a>
+      <a href="{{ url_for('human_evaluation_dashboard') }}">Evaluate</a>
       <a href="{{ url_for('languages_management') }}">Languages</a>
-      <a href="{{ url_for('import_formats') }}">Import Formats</a>
       <a href="{{ url_for('about') }}">About</a>
       <a href="{{ url_for('logout') }}">Logout</a>
       {% else %}
