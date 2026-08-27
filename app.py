@@ -6309,16 +6309,6 @@ def qa_warning_items(source_text, target_text):
             "Source text is uppercase; translation should also be uppercase",
         )
 
-    source_words = {
-        word.lower()
-        for word in re.findall(r"[A-Za-z][A-Za-z'-]{4,}", source)
-        if word.lower() not in {"about", "after", "before", "could", "every", "there", "their", "which", "would"}
-    }
-    target_lower = target.lower()
-    copied = sorted(word for word in source_words if re.search(rf"\b{re.escape(word)}\b", target_lower))
-    if len(copied) >= 3:
-        add("untranslated_source_words", "Several source words may be untranslated")
-
     return warnings
 
 
