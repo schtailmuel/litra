@@ -6184,11 +6184,27 @@ def normalize_qa_warning_code(value):
 
 def normalize_status(status, target_text="", draft_text=""):
     status = (status or "").strip()
-    if status in {"needs_revision", "approved"} and str(target_text or "").strip():
-        return status
-    if str(target_text or "").strip():
+    has_target_text = bool(str(target_text or "").strip())
+    has_draft_text = bool(str(draft_text or "").strip())
+
+    if status == "approved":
+        return "approved" if has_target_text else ("draft" if has_draft_text else "untranslated")
+    if status == "needs_revision":
+        return (
+            "needs_revision"
+            if has_target_text
+            else ("draft" if has_draft_text else "untranslated")
+        )
+    if status == "submitted":
+        return "submitted" if has_target_text else ("draft" if has_draft_text else "untranslated")
+    if status == "draft":
+        return "draft"
+    if status == "untranslated":
+        return "untranslated"
+
+    if has_target_text:
         return "submitted"
-    if str(draft_text or "").strip():
+    if has_draft_text:
         return "draft"
     return "untranslated"
 
