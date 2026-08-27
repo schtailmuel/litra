@@ -8571,6 +8571,37 @@ def human_evaluation_project_detail(eval_project_id):
     )
 
 
+@app.post("/human-evaluation/<int:eval_project_id>/delete")
+def delete_human_evaluation_project(eval_project_id):
+    user = require_login()
+    if not is_db_row(user):
+        return user
+
+    project = human_eval_project_for_user(eval_project_id, user["id"])
+    confirmation = request.form.get("project_name", "").strip()
+    if confirmation != project["name"]:
+        flash("Project name confirmation did not match. Project was not deleted.")
+        return redirect(
+            url_for("human_evaluation_project_detail", eval_project_id=eval_project_id)
+        )
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM human_eval_projects WHERE id = ? AND owner_id = ?",
+            (eval_project_id, user["id"]),
+        ).fetchone()
+        if not row:
+            abort(404)
+        conn.execute(
+            "DELETE FROM human_eval_projects WHERE id = ? AND owner_id = ?",
+            (eval_project_id, user["id"]),
+        )
+        conn.commit()
+
+    flash(f"Human evaluation project '{project['name']}' deleted.")
+    return redirect(url_for("human_evaluation_dashboard"))
+
+
 @app.route("/human-evaluation/<int:eval_project_id>/texts", methods=["GET", "POST"])
 def human_evaluation_project_texts(eval_project_id):
     user = require_login()

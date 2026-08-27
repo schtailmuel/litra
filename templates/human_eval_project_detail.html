@@ -360,6 +360,27 @@
     {% endif %}
   </section>
 
+  {% if can_manage_access %}
+    <section class="form-panel section-gap danger-panel">
+      <h2>Delete Project</h2>
+      <p>
+        This permanently deletes the evaluation project, imported texts,
+        models, evaluator links, ratings, and annotations.
+      </p>
+      <form
+        method="post"
+        action="{{ url_for('delete_human_evaluation_project', eval_project_id=project.id) }}"
+        class="delete-confirm-form"
+      >
+        <label>
+          Type <strong>{{ project.name }}</strong> to confirm
+          <input name="project_name" autocomplete="off" required>
+        </label>
+        <button type="submit" class="danger-button">Delete Project</button>
+      </form>
+    </section>
+  {% endif %}
+
   <dialog id="evalLatexModal" class="eval-comment-modal" aria-label="LaTeX preview">
     <form method="dialog" class="eval-comment-modal-inner">
       <h3 id="evalLatexTitle">LaTeX</h3>
