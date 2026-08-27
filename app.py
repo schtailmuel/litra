@@ -6155,7 +6155,6 @@ QA_WARNING_CODE_OPTIONS = [
     ("markdown_headings", "Markdown heading count differs"),
     ("special_symbols", "Special symbol count differs"),
     ("uppercase_text", "Uppercase style mismatch"),
-    ("untranslated_source_words", "Untranslated source words"),
 ]
 QA_SPECIAL_SYMBOLS = [
     # Original list

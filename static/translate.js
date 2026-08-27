@@ -857,11 +857,6 @@ const qaWarningHelp = {
     reason: "Source appears uppercase while translation does not.",
     guidance: "Match casing style when required by the content.",
   },
-  untranslated_source_words: {
-    title: "Possible untranslated words",
-    reason: "Multiple source-language words appear unchanged in translation.",
-    guidance: "Review copied source words and translate where needed.",
-  },
 };
 
 function qaWarningInfo(warning) {

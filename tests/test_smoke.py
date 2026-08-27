@@ -35,6 +35,16 @@ def test_anonymous_index_redirects_to_login(monkeypatch, tmp_path):
     assert response.headers["Location"].endswith("/login")
 
 
+def test_normalize_status_preserves_manual_status_choices(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    assert litra_app.normalize_status("draft", "Translated text", "") == "draft"
+    assert litra_app.normalize_status("untranslated", "Translated text", "") == "untranslated"
+    assert litra_app.normalize_status("approved", "", "") == "untranslated"
+
+
 def test_human_evaluation_project_flow(monkeypatch, tmp_path):
     litra_app = importlib.import_module("app")
     monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
@@ -2388,3 +2398,4 @@ def test_qa_warning_items_accepts_matching_start_letter_case(monkeypatch, tmp_pa
 
     warning_codes = {item["code"] for item in warnings}
     assert "start_letter_case" not in warning_codes
+
