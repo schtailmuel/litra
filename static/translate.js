@@ -183,8 +183,16 @@ function initTextFontSizeControl() {
 }
 
 function setSaveState(text, mode = "") {
+  if (!els.saveState) {
+    return;
+  }
   els.saveState.textContent = text;
   els.saveState.className = `save-state ${mode}`.trim();
+  if (mode === "saved") {
+    els.saveState.classList.remove("pulse");
+    void els.saveState.offsetWidth;
+    els.saveState.classList.add("pulse");
+  }
 }
 
 function setEditorEnabled(enabled) {
@@ -1032,7 +1040,7 @@ async function saveSegment(loadNext = false, force = false, skipQaCheck = false)
   state.dirty = false;
   state.conflict = null;
   els.conflictPanel.classList.add("hidden");
-  setSaveState("Saved", "saved");
+  setSaveState("Document saved", "saved");
 
   await loadStatus(true);
   if (loadNext) {

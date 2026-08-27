@@ -2803,7 +2803,28 @@ button.danger-text-button:hover {
 }
 
 .save-state.saved {
+  border-color: #86efac;
+  background: #f0fdf4;
   color: var(--ok);
+}
+
+.save-state.pulse {
+  animation: save-state-pulse 850ms ease-out;
+}
+
+@keyframes save-state-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.35);
+  }
+  45% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 0.4rem rgba(22, 163, 74, 0.08);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+  }
 }
 
 .save-state.conflict {
