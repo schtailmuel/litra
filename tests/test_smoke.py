@@ -2608,6 +2608,34 @@ def test_qa_warning_items_accepts_matching_uppercase_style(monkeypatch, tmp_path
     assert "uppercase_text" not in warning_codes
 
 
+def test_qa_warning_items_detects_repeated_adjacent_word(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    warnings = litra_app.qa_warning_items(
+        "This should be clean.",
+        "Das ist ein ein Test an an edge case.",
+    )
+
+    warning_codes = {item["code"] for item in warnings}
+    assert "repeated_word" in warning_codes
+
+
+def test_qa_warning_items_accepts_non_repeated_words(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    warnings = litra_app.qa_warning_items(
+        "This should be clean.",
+        "Das ist ein sauberer Test an einer Kante.",
+    )
+
+    warning_codes = {item["code"] for item in warnings}
+    assert "repeated_word" not in warning_codes
+
+
 def test_qa_warning_items_detects_start_letter_case_mismatch(monkeypatch, tmp_path):
     litra_app = importlib.import_module("app")
     monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")

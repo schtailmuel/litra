@@ -6208,6 +6208,7 @@ QA_WARNING_CODE_OPTIONS = [
     ("markdown_headings", "Markdown heading count differs"),
     ("special_symbols", "Special symbol count differs"),
     ("uppercase_text", "Uppercase style mismatch"),
+    ("repeated_word", "Repeated adjacent word"),
 ]
 QA_SPECIAL_SYMBOLS = [
     # Original list
@@ -6361,6 +6362,19 @@ def qa_warning_items(source_text, target_text):
             "uppercase_text",
             "Source text is uppercase; translation should also be uppercase",
         )
+
+    repeated_words = []
+    previous_word = None
+    for match in re.finditer(r"[^\W\d_]+(?:['’][^\W\d_]+)?", target, re.UNICODE):
+        word = match.group(0).casefold()
+        if previous_word == word and word not in repeated_words:
+            repeated_words.append(word)
+        previous_word = word
+    if repeated_words:
+        preview = ", ".join(repeated_words[:5])
+        if len(repeated_words) > 5:
+            preview += ", ..."
+        add("repeated_word", f"Repeated adjacent word(s): {preview}")
 
     return warnings
 
