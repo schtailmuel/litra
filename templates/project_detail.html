@@ -119,6 +119,29 @@
     </form>
   </section>
 
+  <section class="form-panel section-gap">
+    <div class="page-head compact-head">
+      <div>
+        <h2>Translator Claims</h2>
+        <p class="muted">Allow translators to reclaim stale active assignments by document ID.</p>
+      </div>
+    </div>
+    <form method="post" class="split-fields">
+      <input type="hidden" name="action" value="update_claim_reclaim_settings">
+      <label>
+        Reclaim after minutes
+        <input
+          name="claim_reclaim_minutes"
+          type="number"
+          min="0"
+          value="{{ project.claim_reclaim_minutes if project.claim_reclaim_minutes is not none else 60 }}"
+          required
+        >
+      </label>
+      <button type="submit" class="secondary compact-button">Save Setting</button>
+    </form>
+  </section>
+
   <datalist id="projectLanguageOptions">
     {% for row in language_rows %}
       <option value="{{ row.target_language }}"></option>

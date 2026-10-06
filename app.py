@@ -12,7 +12,7 @@ import unicodedata
 import zipfile
 from collections import Counter
 from collections import defaultdict, deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO, StringIO
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
@@ -70,6 +70,7 @@ HUMAN_EVAL_ERROR_SPAN_MAX_CHARS = int(os.environ.get("HUMAN_EVAL_ERROR_SPAN_MAX_
 HUMAN_EVAL_DYNAMIC_LAYOUT_SOURCE_CHAR_THRESHOLD = int(
     os.environ.get("HUMAN_EVAL_DYNAMIC_LAYOUT_SOURCE_CHAR_THRESHOLD", "300")
 )
+DEFAULT_CLAIM_RECLAIM_MINUTES = 60
 _PG_POOL = None
 _DB_INITIALIZED = False
 _DB_INIT_LOCK = threading.Lock()
@@ -125,6 +126,18 @@ app.jinja_env.globals["STATIC_VERSION"] = STATIC_VERSION
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def client_rate_key():
@@ -436,6 +449,7 @@ def init_postgres_schema(conn):
             name TEXT NOT NULL,
             source_language TEXT NOT NULL,
             source_editable INTEGER NOT NULL DEFAULT 1,
+            claim_reclaim_minutes INTEGER NOT NULL DEFAULT 60,
             import_format_id INTEGER,
             import_mapping TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL
@@ -454,6 +468,7 @@ def init_postgres_schema(conn):
         """
     )
     conn.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS source_editable INTEGER NOT NULL DEFAULT 1")
+    conn.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS claim_reclaim_minutes INTEGER NOT NULL DEFAULT 60")
     conn.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS import_format_id INTEGER")
     conn.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS import_mapping TEXT NOT NULL DEFAULT '{}'")
     conn.execute(
@@ -857,6 +872,7 @@ def init_db():
                 name TEXT NOT NULL,
                 source_language TEXT NOT NULL,
                 source_editable INTEGER NOT NULL DEFAULT 1,
+                claim_reclaim_minutes INTEGER NOT NULL DEFAULT 60,
                 import_format_id INTEGER,
                 import_mapping TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL
@@ -1149,6 +1165,8 @@ def migrate_schema(conn):
     project_columns = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
     if "source_editable" not in project_columns:
         conn.execute("ALTER TABLE projects ADD COLUMN source_editable INTEGER NOT NULL DEFAULT 1")
+    if "claim_reclaim_minutes" not in project_columns:
+        conn.execute("ALTER TABLE projects ADD COLUMN claim_reclaim_minutes INTEGER NOT NULL DEFAULT 60")
     if "import_format_id" not in project_columns:
         conn.execute("ALTER TABLE projects ADD COLUMN import_format_id INTEGER")
     if "import_mapping" not in project_columns:
@@ -3395,6 +3413,18 @@ def parse_optional_int(value, field_name="Value"):
         raise ValueError(f"{field_name} must use a whole number.") from exc
     if parsed < 1:
         raise ValueError(f"{field_name} must be 1 or higher.")
+    return parsed
+
+
+def parse_nonnegative_int(value, field_name="Value"):
+    if value is None or str(value).strip() == "":
+        raise ValueError(f"{field_name} is required.")
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must use a whole number.") from exc
+    if parsed < 0:
+        raise ValueError(f"{field_name} must be 0 or higher.")
     return parsed
 
 
@@ -5833,6 +5863,28 @@ def link_translator_name(link):
     return (link["translator_name"] or link["label"] or "anonymous").strip()[:80] or "anonymous"
 
 
+def project_claim_reclaim_minutes(project):
+    minutes = int_or_none(project["claim_reclaim_minutes"] if project else None)
+    if minutes is None:
+        return DEFAULT_CLAIM_RECLAIM_MINUTES
+    return max(minutes, 0)
+
+
+def claim_reclaim_cutoff(project):
+    minutes = project_claim_reclaim_minutes(project)
+    if minutes <= 0:
+        return None
+    return datetime.now(timezone.utc) - timedelta(minutes=minutes)
+
+
+def claim_is_reclaimable(claim, project):
+    if not claim or claim["status"] != "claimed":
+        return False
+    cutoff = claim_reclaim_cutoff(project)
+    claimed_at = parse_iso_datetime(claim["claimed_at"])
+    return bool(cutoff and claimed_at and claimed_at <= cutoff)
+
+
 def reviewer_name(link):
     return (link["reviewer_name"] or "reviewer").strip()[:80] or "reviewer"
 
@@ -6058,6 +6110,7 @@ def grouped_source_flags(conn, segment_ids, languages=None):
 
 def profile_export_item(segment, selected_languages, translations_by_segment, format_config):
     item = metadata_dict(segment["metadata"])
+    item["segment_id"] = segment["id"]
     if format_config["identifier_path"]:
         set_path(item, format_config["identifier_path"], segment["identifier"])
     if format_config["source_language_path"]:
@@ -9556,6 +9609,33 @@ def project_detail(project_id):
                 )
                 conn.commit()
                 flash("Access removed.")
+                return redirect(url_for("project_detail", project_id=project_id))
+
+            if action == "update_claim_reclaim_settings":
+                try:
+                    claim_reclaim_minutes = parse_nonnegative_int(
+                        request.form.get("claim_reclaim_minutes"),
+                        "Claim reclaim window",
+                    )
+                except ValueError as exc:
+                    flash(str(exc))
+                    return redirect(url_for("project_detail", project_id=project_id))
+                conn.execute(
+                    """
+                    UPDATE projects
+                       SET claim_reclaim_minutes = ?
+                     WHERE id = ?
+                    """,
+                    (claim_reclaim_minutes, project_id),
+                )
+                conn.commit()
+                if claim_reclaim_minutes:
+                    flash(
+                        "Claim reclaim window updated to "
+                        f"{claim_reclaim_minutes} minute(s)."
+                    )
+                else:
+                    flash("Automatic claim reclaim disabled.")
                 return redirect(url_for("project_detail", project_id=project_id))
 
             if action == "upload_language_translations":
@@ -14996,6 +15076,10 @@ def api_claim_segment_by_identifier(token):
         ).fetchone()
         if not link:
             abort(404)
+        project = conn.execute(
+            "SELECT * FROM projects WHERE id = ?",
+            (link["project_id"],),
+        ).fetchone()
 
         conn.execute("BEGIN IMMEDIATE")
 
@@ -15029,7 +15113,19 @@ def api_claim_segment_by_identifier(token):
             (segment["id"], link["target_language"]),
         ).fetchone()
         if existing_claim:
-            if existing_claim["share_link_id"] == link["id"] and existing_claim["status"] == "claimed":
+            if existing_claim["share_link_id"] == link["id"]:
+                if existing_claim["status"] != "claimed":
+                    conn.execute(
+                        """
+                        UPDATE translation_claims
+                           SET status = 'claimed',
+                               claimed_at = ?,
+                               completed_at = NULL
+                         WHERE id = ?
+                        """,
+                        (now_iso(), existing_claim["id"]),
+                    )
+                    conn.commit()
                 remaining, used = link_remaining_credits(conn, link)
                 return jsonify(
                     {
@@ -15038,30 +15134,56 @@ def api_claim_segment_by_identifier(token):
                         **assignment_payload(link, used, remaining),
                     }
                 )
+
             remaining, used = link_remaining_credits(conn, link)
+            if (
+                existing_claim["status"] == "claimed"
+                and claim_is_reclaimable(existing_claim, project)
+            ):
+                if remaining is not None and remaining <= 0:
+                    return jsonify(
+                        {
+                            "status": "limit_reached",
+                            "message": "Assignment limit reached.",
+                            **assignment_payload(link, used, remaining),
+                        }
+                    )
+                conn.execute(
+                    """
+                    UPDATE translation_claims
+                       SET share_link_id = ?,
+                           translator_name = ?,
+                           claimed_at = ?,
+                           completed_at = NULL
+                     WHERE id = ?
+                    """,
+                    (
+                        link["id"],
+                        link_translator_name(link),
+                        now_iso(),
+                        existing_claim["id"],
+                    ),
+                )
+                conn.commit()
+                remaining, used = link_remaining_credits(conn, link)
+                return jsonify(
+                    {
+                        "status": "ok",
+                        "message": "Stale claim reassigned.",
+                        "segment": serialize_claimed_segment(conn, link, segment["id"]),
+                        **assignment_payload(link, used, remaining),
+                    }
+                )
+
+            message = (
+                "That segment already has a submitted translation."
+                if existing_claim["status"] == "completed"
+                else "That segment is already claimed."
+            )
             return jsonify(
                 {
                     "status": "unavailable",
-                    "message": "That segment is already claimed.",
-                    **assignment_payload(link, used, remaining),
-                }
-            )
-
-        translation = conn.execute(
-            """
-            SELECT target_text
-            FROM translations
-            WHERE segment_id = ?
-              AND lower(target_language) = lower(?)
-            """,
-            (segment["id"], link["target_language"]),
-        ).fetchone()
-        if translation and str(translation["target_text"] or "").strip():
-            remaining, used = link_remaining_credits(conn, link)
-            return jsonify(
-                {
-                    "status": "translated",
-                    "message": "That segment already has a submitted translation.",
+                    "message": message,
                     **assignment_payload(link, used, remaining),
                 }
             )
@@ -15954,7 +16076,8 @@ def export_project_jsonl_multi(project_id):
         item = metadata_dict(segment["metadata"])
         flags = source_flags.get(segment_id, [])
         item.update(
-            {
+            {   
+                "segment_id": segment_id,
                 "identifier": segment["identifier"],
                 "source_language": segment["source_language"],
                 "source_text": segment["source_text"],

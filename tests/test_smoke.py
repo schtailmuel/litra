@@ -2101,6 +2101,242 @@ def test_translator_recent_submissions_can_be_deleted(monkeypatch, tmp_path):
     assert status_after_payload["recent_submissions"] == []
 
 
+def test_claim_by_identifier_reassigns_stale_claim(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    stale_claimed_at = (
+        litra_app.datetime.now(litra_app.timezone.utc)
+        - litra_app.timedelta(minutes=31)
+    ).isoformat(timespec="seconds")
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("owner",),
+        ).fetchone()["id"]
+        project_id = conn.execute(
+            """
+            INSERT INTO projects (owner_id, name, source_language, source_editable, import_mapping, created_at)
+            VALUES (?, ?, ?, 1, '{}', ?)
+            """,
+            (owner_id, "Claim Reassign", "English", litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO project_languages (project_id, target_language, created_at) VALUES (?, ?, ?)",
+            (project_id, "German", litra_app.now_iso()),
+        )
+        segment_id = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "msg-1", 1, "English", "Hello", "", "{}", litra_app.now_iso()),
+        ).lastrowid
+        stale_link_id = conn.execute(
+            """
+            INSERT INTO share_links
+                (project_id, token, target_language, translator_name, credit_limit, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "tok-stale", "German", "stale-translator", 5, litra_app.now_iso()),
+        ).lastrowid
+        worker_link_id = conn.execute(
+            """
+            INSERT INTO share_links
+                (project_id, token, target_language, translator_name, credit_limit, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "tok-worker", "German", "worker", 5, litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO translation_claims
+                (share_link_id, segment_id, target_language, translator_name, status, claimed_at)
+            VALUES (?, ?, ?, ?, 'claimed', ?)
+            """,
+            (stale_link_id, segment_id, "German", "stale-translator", stale_claimed_at),
+        )
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    with client.session_transaction() as session:
+        session["user_id"] = owner_id
+
+    settings_response = client.post(
+        f"/projects/{project_id}",
+        data={
+            "action": "update_claim_reclaim_settings",
+            "claim_reclaim_minutes": "30",
+        },
+    )
+    assert settings_response.status_code == 302
+    with litra_app.db() as conn:
+        project_setting = conn.execute(
+            "SELECT claim_reclaim_minutes FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()["claim_reclaim_minutes"]
+    assert project_setting == 30
+
+    response = client.post(
+        "/api/t/tok-worker/claim-by-identifier",
+        json={"identifier": "msg-1"},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "ok"
+    assert payload["segment"]["id"] == segment_id
+    assert payload["message"] == "Stale claim reassigned."
+
+    save_response = client.post(
+        f"/api/t/tok-worker/segments/{segment_id}",
+        json={"target_text": "Hallo", "target_instructions": "", "comment": "", "version": 0},
+    )
+    assert save_response.status_code == 200
+
+    with litra_app.db() as conn:
+        claim = conn.execute(
+            """
+            SELECT share_link_id, translator_name, status, completed_at
+            FROM translation_claims
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment_id, "German"),
+        ).fetchone()
+        translation = conn.execute(
+            """
+            SELECT target_text, updated_by
+            FROM translations
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment_id, "German"),
+        ).fetchone()
+
+    assert claim["share_link_id"] == worker_link_id
+    assert claim["translator_name"] == "worker"
+    assert claim["status"] == "completed"
+    assert claim["completed_at"]
+    assert translation["target_text"] == "Hallo"
+    assert translation["updated_by"] == "worker"
+
+
+def test_claim_by_identifier_allows_submitted_translation_edit(monkeypatch, tmp_path):
+    litra_app = importlib.import_module("app")
+    monkeypatch.setattr(litra_app, "DB_PATH", tmp_path / "app.sqlite3")
+    monkeypatch.setattr(litra_app, "_DB_INITIALIZED", False)
+
+    litra_app.init_db()
+    litra_app.app.config["TESTING"] = True
+
+    with litra_app.db() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            ("owner", "hash", litra_app.now_iso()),
+        )
+        owner_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?",
+            ("owner",),
+        ).fetchone()["id"]
+        project_id = conn.execute(
+            """
+            INSERT INTO projects (owner_id, name, source_language, source_editable, import_mapping, created_at)
+            VALUES (?, ?, ?, 1, '{}', ?)
+            """,
+            (owner_id, "Submitted Edit", "English", litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO project_languages (project_id, target_language, created_at) VALUES (?, ?, ?)",
+            (project_id, "German", litra_app.now_iso()),
+        )
+        segment_id = conn.execute(
+            """
+            INSERT INTO segments
+                (project_id, identifier, ordinal, source_language, source_text, instructions, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "msg-1", 1, "English", "Hello", "", "{}", litra_app.now_iso()),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO share_links
+                (project_id, token, target_language, translator_name, credit_limit, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, "tok-editor", "German", "editor", 5, litra_app.now_iso()),
+        )
+        conn.execute(
+            """
+            INSERT INTO translations
+                (segment_id, target_language, target_text, status, qa_warnings, version, updated_by, updated_at)
+            VALUES (?, ?, ?, 'submitted', '[]', 1, ?, ?)
+            """,
+            (segment_id, "German", "Hallo alt", "import", litra_app.now_iso()),
+        )
+        conn.commit()
+
+    client = litra_app.app.test_client()
+    claim_response = client.post(
+        "/api/t/tok-editor/claim-by-identifier",
+        json={"identifier": "msg-1"},
+    )
+    assert claim_response.status_code == 200
+    claim_payload = claim_response.get_json()
+    assert claim_payload["status"] == "ok"
+    assert claim_payload["segment"]["target_text"] == "Hallo alt"
+    assert claim_payload["segment"]["version"] == 1
+
+    save_response = client.post(
+        f"/api/t/tok-editor/segments/{segment_id}",
+        json={
+            "target_text": "Hallo neu",
+            "target_instructions": "",
+            "comment": "edited",
+            "version": 1,
+        },
+    )
+    assert save_response.status_code == 200
+    assert save_response.get_json()["version"] == 2
+
+    with litra_app.db() as conn:
+        claim = conn.execute(
+            """
+            SELECT translator_name, status, completed_at
+            FROM translation_claims
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment_id, "German"),
+        ).fetchone()
+        translation = conn.execute(
+            """
+            SELECT target_text, comment, version, updated_by
+            FROM translations
+            WHERE segment_id = ?
+              AND lower(target_language) = lower(?)
+            """,
+            (segment_id, "German"),
+        ).fetchone()
+
+    assert claim["translator_name"] == "editor"
+    assert claim["status"] == "completed"
+    assert claim["completed_at"]
+    assert translation["target_text"] == "Hallo neu"
+    assert translation["comment"] == "edited"
+    assert translation["version"] == 2
+    assert translation["updated_by"] == "editor"
+
+
 def test_translation_data_filters_by_warning_code_and_project_rows_clickable(
     monkeypatch, tmp_path
 ):
@@ -2398,4 +2634,3 @@ def test_qa_warning_items_accepts_matching_start_letter_case(monkeypatch, tmp_pa
 
     warning_codes = {item["code"] for item in warnings}
     assert "start_letter_case" not in warning_codes
-
