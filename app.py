@@ -3354,8 +3354,10 @@ def parse_comment_csv(file_storage, has_header=True):
 
 def import_translation_mode(value):
     value = (value or "submitted").strip()
-    if value in {"draft", "needs_revision"}:
-        return "draft"
+    if value == "reviewed":
+        return "approved"
+    if value in {"draft", "submitted", "needs_revision", "approved"}:
+        return value
     return "submitted"
 
 
@@ -3371,7 +3373,8 @@ def imported_translation_payload(
     target_text = str(target_text or "")
     target_instructions = str(target_instructions or "")
     comment = str(comment or "")
-    if import_translation_mode(mode) == "draft":
+    mode = import_translation_mode(mode)
+    if mode == "draft":
         return {
             "target_text": "",
             "draft_text": target_text,
@@ -3394,7 +3397,7 @@ def imported_translation_payload(
         "draft_instructions": "",
         "comment": comment,
         "draft_comment": "",
-        "status": normalize_status("submitted", target_text, ""),
+        "status": normalize_status(mode, target_text, ""),
         "qa_warnings": qa_warnings_json(source_text, target_text),
         "version": 1,
         "updated_by": user_name,

@@ -1582,6 +1582,8 @@ def test_upload_language_translations_add_only_by_default_and_override_opt_in(
     page = client.get(f"/projects/{project_id}")
     assert page.status_code == 200
     assert b"override_existing_translations" in page.data
+    assert b'<option value="needs_revision">Needs revision</option>' in page.data
+    assert b'<option value="approved">Reviewed</option>' in page.data
 
     add_only_import = client.post(
         f"/projects/{project_id}",
@@ -1677,6 +1679,48 @@ def test_upload_language_translations_add_only_by_default_and_override_opt_in(
         "OVERRIDE-1",
         "OVERRIDE-2",
     ]
+
+    reviewed_import = client.post(
+        f"/projects/{project_id}",
+        data={
+            "action": "upload_language_translations",
+            "upload_target_language": "German",
+            "message_id_key": "message_id",
+            "translation_text_key": "translation",
+            "translation_comment_key": "",
+            "translated_instruction_key": "",
+            "translation_language_key": "",
+            "uploaded_translation_status": "approved",
+            "override_existing_translations": "1",
+            "translation_jsonl": (
+                BytesIO(
+                    (
+                        '{"message_id":"msg-1","translation":"REVIEWED-1"}\n'
+                        '{"message_id":"msg-2","translation":"REVIEWED-2"}\n'
+                    ).encode("utf-8")
+                ),
+                "import-reviewed.jsonl",
+            ),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert reviewed_import.status_code == 200
+    assert b"0 created, 2 updated, 0 existing kept" in reviewed_import.data
+
+    with litra_app.db() as conn:
+        reviewed_rows = conn.execute(
+            """
+            SELECT t.status
+            FROM translations t
+            JOIN segments s ON s.id = t.segment_id
+            WHERE s.project_id = ?
+              AND lower(t.target_language) = lower('German')
+            ORDER BY s.ordinal
+            """,
+            (project_id,),
+        ).fetchall()
+    assert [row["status"] for row in reviewed_rows] == ["approved", "approved"]
 
 
 def test_translation_comment_filters_and_project_jsonl_export(monkeypatch, tmp_path):
